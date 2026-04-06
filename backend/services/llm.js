@@ -96,4 +96,48 @@ ${text.slice(0, 14000)}`;
     }));
 }
 
-module.exports = { extractSessionsFromText, stripHtml };
+const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
+
+/**
+ * @param {Array<{ role: string; content: string }>} messages
+ * @param {{ model?: string; temperature?: number }} [options]
+ * @returns {Promise<string>} Assistant message content (plain text)
+ */
+async function chatCompletion(messages, options = {}) {
+  const apiKey = process.env.STANFORD_API_KEY;
+  if (!apiKey) {
+    throw new Error('STANFORD_API_KEY is not set. Add it to backend/.env');
+  }
+
+  const cleaned = messages
+    .filter((m) => m && typeof m.content === 'string' && ALLOWED_ROLES.has(m.role))
+    .map((m) => ({ role: m.role, content: m.content.slice(0, 32000) }));
+
+  if (!cleaned.length) {
+    throw new Error('No valid chat messages');
+  }
+
+  const resp = await fetch(STANFORD_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: options.model || 'gpt-4o',
+      stream: false,
+      temperature: options.temperature ?? 0.7,
+      messages: cleaned,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Stanford API error ${resp.status}: ${errText}`);
+  }
+
+  const data = await resp.json();
+  return String(data.choices?.[0]?.message?.content ?? '').trim();
+}
+
+module.exports = { extractSessionsFromText, stripHtml, chatCompletion };

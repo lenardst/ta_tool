@@ -10,14 +10,16 @@ import {
   Cog6ToothIcon,
   TableCellsIcon,
   QueueListIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 const navItems = [
-  { to: '/',         label: 'Dashboard', Icon: ChartBarIcon },
-  { to: '/sessions', label: 'Sessions',  Icon: QueueListIcon },
-  { to: '/session',  label: 'Record',    Icon: CalendarDaysIcon },
-  { to: '/grades',   label: 'Grades',    Icon: TableCellsIcon },
-  { to: '/settings', label: 'Settings',  Icon: Cog6ToothIcon },
+  { to: '/',             label: 'Dashboard',    Icon: ChartBarIcon },
+  { to: '/sessions',     label: 'Sessions',     Icon: QueueListIcon },
+  { to: '/session',      label: 'Record',       Icon: CalendarDaysIcon },
+  { to: '/grades',       label: 'Grades',       Icon: TableCellsIcon },
+  { to: '/participants', label: 'Participants', Icon: UserGroupIcon },
+  { to: '/settings',     label: 'Settings',     Icon: Cog6ToothIcon },
 ];
 
 export default function Layout() {

@@ -232,6 +232,21 @@ const db = {
     // Migration for existing databases created before session notes.
     try { _sqlDb.run('ALTER TABLE sessions ADD COLUMN notes TEXT'); } catch (_) {}
 
+    // Migration: email log table.
+    try {
+      _sqlDb.run(`
+        CREATE TABLE IF NOT EXISTS email_log (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          sent_at    TEXT    NOT NULL,
+          class_id   INTEGER NOT NULL,
+          subject    TEXT    NOT NULL,
+          body       TEXT    NOT NULL,
+          recipients TEXT    NOT NULL,
+          self_copy  INTEGER NOT NULL DEFAULT 0
+        )
+      `);
+    } catch (_) {}
+
     // Migration: ensure one student row per (class_id, canvas_user_id).
     // Merge dependent rows onto the kept student id before removing duplicates.
     const dedupeStudents = db.transaction(() => {

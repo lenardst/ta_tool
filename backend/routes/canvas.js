@@ -71,7 +71,7 @@ router.get('/courses/:id/students', async (req, res, next) => {
       // Use the section-specific enrollments endpoint (the course-level endpoint
       // does not reliably support section_id filtering and returns 500 on some instances)
       const enrollments = await canvasFetchAll(
-        `/sections/${section_id}/enrollments?type[]=StudentEnrollment&state[]=active&per_page=100`,
+        `/sections/${section_id}/enrollments?type[]=StudentEnrollment&state[]=active&include[]=email&per_page=100`,
         settings,
       );
       // Normalize enrollment objects → plain user objects, deduplicate
@@ -90,7 +90,7 @@ router.get('/courses/:id/students', async (req, res, next) => {
       }
     } else {
       students = await canvasFetchAll(
-        `/courses/${req.params.id}/users?enrollment_type[]=student&per_page=100`,
+        `/courses/${req.params.id}/users?enrollment_type[]=student&include[]=email&per_page=100`,
         settings,
       );
     }

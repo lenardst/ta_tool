@@ -59,28 +59,49 @@ router.post('/:id/sync-students', async (req, res, next) => {
     }
 
     // Never overwrite existing entries: only insert students not yet present.
-    const existing = db
-      .prepare('SELECT canvas_user_id FROM students WHERE class_id=?')
-      .all(cls.id);
-    const existingCanvasIds = new Set(existing.map((row) => String(row.canvas_user_id)));
-
     const upsert = db.prepare(`
       INSERT INTO students(class_id, canvas_user_id, name, email, sortable_name)
       VALUES(@class_id, @canvas_user_id, @name, @email, @sortable_name)
-      ON CONFLICT(class_id, canvas_user_id) DO NOTHING
+      ON CONFLICT(class_id, canvas_user_id) DO UPDATE SET
+        name=excluded.name,
+        email=excluded.email,
+        sortable_name=excluded.sortable_name
     `);
     const syncMany = db.transaction((list) => {
       for (const s of list) upsert.run({ class_id: cls.id, ...s });
     });
-    const toInsert = [];
-    for (const [canvasId, student] of incomingByCanvasId.entries()) {
-      if (!existingCanvasIds.has(canvasId)) toInsert.push(student);
-    }
-    syncMany(toInsert);
+    syncMany([...incomingByCanvasId.values()]);
     res.json(db.prepare('SELECT * FROM students WHERE class_id=? ORDER BY sortable_name').all(cls.id));
   } catch (err) {
     next(err);
   }
+});
+
+// POST /api/classes/:id/students/sample  { count, only_with_email? }
+router.post('/:id/students/sample', (req, res) => {
+  const cls = db.prepare('SELECT id FROM classes WHERE id=?').get(req.params.id);
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const raw = Number(req.body.count);
+  if (!Number.isFinite(raw) || raw < 1) {
+    return res.status(400).json({ error: 'count must be a positive number' });
+  }
+  const count = Math.min(500, Math.floor(raw));
+  const onlyWithEmail = req.body.only_with_email !== false;
+
+  const rows = onlyWithEmail
+    ? db
+        .prepare(
+          `SELECT * FROM students
+           WHERE class_id=? AND TRIM(COALESCE(email,'')) != ''
+           ORDER BY RANDOM() LIMIT ?`
+        )
+        .all(req.params.id, count)
+    : db
+        .prepare('SELECT * FROM students WHERE class_id=? ORDER BY RANDOM() LIMIT ?')
+        .all(req.params.id, count);
+
+  res.json(rows);
 });
 
 // GET /api/classes/:id/students

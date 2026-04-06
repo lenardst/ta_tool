@@ -157,6 +157,11 @@ export const api = {
       apiFetch<{ ok: boolean }>(`/api/classes/${id}`, { method: 'DELETE' }),
     students: (classId: number) =>
       apiFetch<Student[]>(`/api/classes/${classId}/students`),
+    sampleStudents: (classId: number, payload: { count: number; only_with_email?: boolean }) =>
+      apiFetch<Student[]>(`/api/classes/${classId}/students/sample`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
     syncStudents: (
       classId: number,
       students: { canvas_user_id: string; name: string; email: string; sortable_name: string }[],
@@ -242,5 +247,30 @@ export const api = {
       apiFetch<GradeRecord[]>(`/api/grades?class_id=${classId}`),
     upsert: (payload: { assignment_id: number; student_id: number; points: number | null }) =>
       apiFetch<GradeRecord>('/api/grades', { method: 'PUT', body: JSON.stringify(payload) }),
+  },
+
+  // ─── LLM (drafting) ────────────────────────────────────────────────────────
+
+  llm: {
+    chat: (messages: { role: 'system' | 'user' | 'assistant'; content: string }[]) =>
+      apiFetch<{ message: string }>('/api/llm/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages }),
+      }),
+  },
+
+  // ─── Email ─────────────────────────────────────────────────────────────────
+
+  email: {
+    status: () => apiFetch<{ smtp_configured: boolean }>('/api/email/status'),
+    send: (payload: { class_id: number; student_ids: number[]; subject: string; body: string; smtp_pass?: string; self_email?: string }) =>
+      apiFetch<{ sent: number[]; failed: { student_id: number; error: string }[] }>('/api/email/send', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    history: (classId: number) =>
+      apiFetch<{ id: number; sent_at: string; class_id: number; subject: string; body: string; recipients: { student_id: number; name: string; email: string }[]; self_copy: number }[]>(
+        `/api/email/history?class_id=${classId}`,
+      ),
   },
 };

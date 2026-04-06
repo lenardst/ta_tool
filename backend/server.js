@@ -16,6 +16,8 @@ app.use('/api/attendance',    require('./routes/attendance'));
 app.use('/api/participation', require('./routes/participation'));
 app.use('/api/assignments',   require('./routes/assignments'));
 app.use('/api/grades',        require('./routes/grades'));
+app.use('/api/llm',           require('./routes/llm'));
+app.use('/api/email',         require('./routes/email'));
 
 app.use((err, _req, res, _next) => {
   console.error(err);

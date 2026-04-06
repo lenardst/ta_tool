@@ -7,6 +7,7 @@ import SessionsSetup from './pages/SessionsSetup';
 import SessionView from './pages/SessionView';
 import GradesView from './pages/GradesView';
 import Settings from './pages/Settings';
+import Participants from './pages/Participants';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, retry: 1 } },
@@ -23,6 +24,7 @@ export default function App() {
               <Route path="sessions" element={<SessionsSetup />} />
               <Route path="session" element={<SessionView />} />
               <Route path="grades" element={<GradesView />} />
+              <Route path="participants" element={<Participants />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>
