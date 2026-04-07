@@ -38,15 +38,8 @@ router.post('/', (req, res) => {
   );
 
   const classId = info.lastInsertRowid;
-  // Add creator as member; if admin, add all users
-  if (req.user.is_admin) {
-    const users = db.prepare('SELECT id FROM users').all();
-    const addMember = db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)');
-    const addAll = db.transaction((list) => { for (const u of list) addMember.run(classId, u.id); });
-    addAll(users);
-  } else {
-    db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)').run(classId, req.user.id);
-  }
+  // Only add the creator — share with others via the Admin page
+  db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)').run(classId, req.user.id);
   res.status(201).json(db.prepare('SELECT * FROM classes WHERE id=?').get(classId));
 });
 
