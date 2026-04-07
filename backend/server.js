@@ -11,8 +11,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Public: auth + one-time migration endpoint (self-protected by MIGRATE_SECRET)
-app.use('/api/auth',    require('./routes/auth'));
+// Public: auth endpoint (no token required)
+app.use('/api/auth', require('./routes/auth'));
 
 // All routes below require a valid JWT
 app.use('/api', requireAuth);
@@ -28,7 +28,6 @@ app.use('/api/grades',        require('./routes/grades'));
 app.use('/api/llm',           require('./routes/llm'));
 app.use('/api/email',         require('./routes/email'));
 app.use('/api/admin',         require('./routes/admin'));
-app.use('/api/migrate',       require('./routes/migrate'));
 
 app.use((err, _req, res, _next) => {
   console.error(err);
