@@ -157,6 +157,8 @@ export const api = {
       }),
     removeMember: (class_id: number, user_id: number) =>
       apiFetch<{ ok: boolean }>(`/api/admin/class-members/${class_id}/${user_id}`, { method: 'DELETE' }),
+    backups: () => apiFetch<{ filename: string; size: number; created_at: string }[]>('/api/admin/backups'),
+    triggerBackup: () => apiFetch<{ ok: boolean; filename: string }>('/api/admin/backup', { method: 'POST' }),
   },
 
   // ─── Settings ─────────────────────────────────────────────────────────────

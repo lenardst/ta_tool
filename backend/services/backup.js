@@ -1,60 +1,69 @@
 const fs = require('fs');
 const path = require('path');
-const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, '..', 'ta_tool.db');
-const BACKUP_EMAIL = process.env.BACKUP_EMAIL || process.env.EMAIL_FROM;
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(path.dirname(DB_PATH), 'backups');
+const MAX_BACKUPS = 14;
 
-function getTransport() {
-  const host = process.env.SMTP_HOST;
-  if (!host || !BACKUP_EMAIL) return null;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secure = process.env.SMTP_SECURE === '1' || process.env.SMTP_SECURE === 'true' || port === 465;
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS || '' } : undefined,
-  });
-}
-
-async function sendBackup() {
-  const transport = getTransport();
-  if (!transport) {
-    console.warn('[backup] SMTP not configured — skipping backup email');
-    return;
-  }
-
+async function saveBackup() {
   if (!fs.existsSync(DB_PATH)) {
     console.warn('[backup] Database file not found at', DB_PATH);
-    return;
+    return null;
   }
 
-  const dateStr = new Date().toISOString().slice(0, 10);
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+  const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `ta_tool_backup_${dateStr}.db`;
+  const destPath = path.join(BACKUP_DIR, filename);
 
-  try {
-    await transport.sendMail({
-      from: process.env.EMAIL_FROM || process.env.SMTP_USER,
-      to: BACKUP_EMAIL,
-      subject: `TA Tool — daily backup ${dateStr}`,
-      text: `Automated daily backup of the TA Tool database.\n\nDate: ${dateStr}\nSize: ${(fs.statSync(DB_PATH).size / 1024).toFixed(1)} KB\n\nTo restore: replace the database file on the server with this attachment.`,
-      attachments: [{ filename, path: DB_PATH }],
-    });
-    console.log(`[backup] Sent backup to ${BACKUP_EMAIL} (${filename})`);
-  } catch (err) {
-    console.error('[backup] Failed to send backup email:', err.message);
+  fs.copyFileSync(DB_PATH, destPath);
+  console.log(`[backup] Saved backup: ${filename} (${(fs.statSync(destPath).size / 1024).toFixed(1)} KB)`);
+
+  // Prune old backups, keep last MAX_BACKUPS
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.startsWith('ta_tool_backup_') && f.endsWith('.db'))
+    .sort();
+
+  if (files.length > MAX_BACKUPS) {
+    const toDelete = files.slice(0, files.length - MAX_BACKUPS);
+    for (const f of toDelete) {
+      fs.unlinkSync(path.join(BACKUP_DIR, f));
+      console.log(`[backup] Pruned old backup: ${f}`);
+    }
   }
+
+  return filename;
+}
+
+function listBackups() {
+  if (!fs.existsSync(BACKUP_DIR)) return [];
+  return fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.startsWith('ta_tool_backup_') && f.endsWith('.db'))
+    .sort()
+    .reverse()
+    .map(filename => {
+      const stat = fs.statSync(path.join(BACKUP_DIR, filename));
+      return { filename, size: stat.size, created_at: stat.mtime.toISOString() };
+    });
+}
+
+function getBackupPath(filename) {
+  // Sanitize filename to prevent path traversal
+  const safe = path.basename(filename);
+  if (!safe.startsWith('ta_tool_backup_') || !safe.endsWith('.db')) return null;
+  const filePath = path.join(BACKUP_DIR, safe);
+  return fs.existsSync(filePath) ? filePath : null;
 }
 
 function scheduleBackups() {
   // Run daily at 3:00 AM UTC
   cron.schedule('0 3 * * *', () => {
     console.log('[backup] Running scheduled backup...');
-    sendBackup();
+    saveBackup();
   });
   console.log('[backup] Daily backup scheduled at 03:00 UTC');
 }
 
-module.exports = { scheduleBackups, sendBackup };
+module.exports = { scheduleBackups, saveBackup, listBackups, getBackupPath };

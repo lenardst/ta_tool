@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { sendBackup } = require('../services/backup');
+const { saveBackup, listBackups, getBackupPath } = require('../services/backup');
 const router = express.Router();
 
 function isClassAdmin(classId, userId) {
@@ -75,15 +75,29 @@ router.delete('/class-members/:classId/:userId', (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/admin/backup  — trigger an immediate backup email
+// POST /api/admin/backup  — trigger an immediate backup
 router.post('/backup', async (req, res, next) => {
   if (!req.user.is_admin) return res.status(403).json({ error: 'Global admin only' });
   try {
-    await sendBackup();
-    res.json({ ok: true });
+    const filename = await saveBackup();
+    res.json({ ok: true, filename });
   } catch (err) {
     next(err);
   }
+});
+
+// GET /api/admin/backups  — list available backups
+router.get('/backups', (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Global admin only' });
+  res.json(listBackups());
+});
+
+// GET /api/admin/backups/:filename  — download a backup file
+router.get('/backups/:filename', (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Global admin only' });
+  const filePath = getBackupPath(req.params.filename);
+  if (!filePath) return res.status(404).json({ error: 'Backup not found' });
+  res.download(filePath);
 });
 
 // POST /api/admin/classes/:id/restore  — recover a soft-deleted class
