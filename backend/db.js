@@ -165,6 +165,9 @@ const db = {
     // Migration: add is_admin column to users
     try { _sqlDb.run('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
 
+    // Migration: add role column to class_members ('admin' | 'member')
+    try { _sqlDb.run("ALTER TABLE class_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'"); } catch (_) {}
+
     // Migration: set lenard as admin
     try { _sqlDb.run("UPDATE users SET is_admin=1 WHERE username='lenard'"); } catch (_) {}
 
@@ -202,6 +205,7 @@ const db = {
       CREATE TABLE IF NOT EXISTS class_members (
         class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
         user_id  INTEGER NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+        role     TEXT    NOT NULL DEFAULT 'member',
         PRIMARY KEY(class_id, user_id)
       );
 

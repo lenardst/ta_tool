@@ -38,8 +38,8 @@ router.post('/', (req, res) => {
   );
 
   const classId = info.lastInsertRowid;
-  // Only add the creator — share with others via the Admin page
-  db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)').run(classId, req.user.id);
+  // Creator gets admin role — share with others via the Admin page
+  db.prepare("INSERT OR IGNORE INTO class_members(class_id, user_id, role) VALUES(?,?,'admin')").run(classId, req.user.id);
   res.status(201).json(db.prepare('SELECT * FROM classes WHERE id=?').get(classId));
 });
 

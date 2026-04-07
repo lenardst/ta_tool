@@ -34,7 +34,7 @@ export default function Admin() {
       <p className="text-sm text-gray-500 mb-6">Control which users have access to each class.</p>
 
       {classes.length === 0 && (
-        <p className="text-gray-400 text-sm">No classes yet. Import one from Settings.</p>
+        <p className="text-gray-400 text-sm">No classes to manage. Import a class from Settings to share it with others.</p>
       )}
 
       <div className="space-y-4">

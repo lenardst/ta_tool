@@ -100,21 +100,19 @@ export default function Layout() {
               {label}
             </NavLink>
           ))}
-          {is_admin && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-indigo-200 hover:bg-indigo-700 hover:text-white'
-                }`
-              }
-            >
-              <ShieldCheckIcon className="h-5 w-5 flex-shrink-0" />
-              Admin
-            </NavLink>
-          )}
+          <NavLink
+            to="/admin"
+            className={({ isActive }) =>
+              `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-indigo-200 hover:bg-indigo-700 hover:text-white'
+              }`
+            }
+          >
+            <ShieldCheckIcon className="h-5 w-5 flex-shrink-0" />
+            {is_admin ? 'Admin' : 'Sharing'}
+          </NavLink>
         </nav>
 
         {/* User / logout */}
