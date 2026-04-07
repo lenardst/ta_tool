@@ -10,6 +10,7 @@ import type {
 } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
 import RatingPicker from '../components/RatingPicker';
+import { isPastSessionDate, localISODate } from '../utils/calendar';
 import {
   CalendarDaysIcon,
   MinusIcon,
@@ -18,6 +19,7 @@ import {
   CheckIcon,
   XMarkIcon,
   QueueListIcon,
+  LockClosedIcon,
 } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
 
@@ -44,6 +46,7 @@ interface StudentRowProps {
   sessionId: number;
   attendance: AttendanceRecord | undefined;
   participation: ParticipationRecord | undefined;
+  readOnly?: boolean;
   onAttendanceChange: (studentId: number, status: AttendanceStatus) => void;
   onParticipationChange: (
     studentId: number,
@@ -56,6 +59,7 @@ function StudentRow({
   student,
   attendance,
   participation,
+  readOnly = false,
   onAttendanceChange,
   onParticipationChange,
 }: StudentRowProps) {
@@ -68,11 +72,13 @@ function StudentRow({
   const [noteVal, setNoteVal] = useState(note);
 
   const cycleStatus = () => {
+    if (readOnly) return;
     const idx = STATUS_CYCLE.indexOf(status);
     onAttendanceChange(student.id, STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]);
   };
 
   const changeInterruptions = (delta: number) => {
+    if (readOnly) return;
     const next = Math.max(0, interruptions + delta);
     onParticipationChange(student.id, { interruptions: next }, participation);
   };
@@ -91,20 +97,31 @@ function StudentRow({
 
       {/* Attendance */}
       <td className="px-4 py-3">
-        <button
-          onClick={cycleStatus}
-          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition-colors ${STATUS_STYLE[status]}`}
-        >
-          {status}
-        </button>
+        {readOnly ? (
+          <span
+            className={`inline-block rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${STATUS_STYLE[status]}`}
+          >
+            {status}
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={cycleStatus}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide transition-colors ${STATUS_STYLE[status]}`}
+          >
+            {status}
+          </button>
+        )}
       </td>
 
       {/* Interruptions */}
       <td className="px-4 py-3">
         <div className="flex items-center gap-1">
           <button
+            type="button"
+            disabled={readOnly}
             onClick={() => changeInterruptions(-1)}
-            className="rounded-full bg-gray-100 p-1 text-gray-600 hover:bg-gray-200"
+            className="rounded-full bg-gray-100 p-1 text-gray-600 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <MinusIcon className="h-3.5 w-3.5" />
           </button>
@@ -112,8 +129,10 @@ function StudentRow({
             {interruptions}
           </span>
           <button
+            type="button"
+            disabled={readOnly}
             onClick={() => changeInterruptions(1)}
-            className="rounded-full bg-gray-100 p-1 text-gray-600 hover:bg-gray-200"
+            className="rounded-full bg-gray-100 p-1 text-gray-600 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <PlusIcon className="h-3.5 w-3.5" />
           </button>
@@ -124,14 +143,16 @@ function StudentRow({
       <td className="px-4 py-3">
         <RatingPicker
           value={rating}
-          disabled={isAbsent}
+          disabled={readOnly || isAbsent}
           onChange={(v) => onParticipationChange(student.id, { contribution_rating: v }, participation)}
         />
       </td>
 
       {/* Note */}
       <td className="px-4 py-3 min-w-[180px]">
-        {editingNote ? (
+        {readOnly ? (
+          <span className="text-xs text-gray-600">{note || '—'}</span>
+        ) : editingNote ? (
           <div className="flex items-center gap-1">
             <input
               autoFocus
@@ -164,6 +185,7 @@ export default function SessionView() {
   const { activeClass } = useActiveClass();
   const qc = useQueryClient();
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const prevClassIdRef = useRef<number | undefined>(undefined);
   const [editingDate, setEditingDate] = useState<number | null>(null);
   const [dateVal, setDateVal] = useState('');
   const [quickSearch, setQuickSearch] = useState('');
@@ -188,6 +210,41 @@ export default function SessionView() {
     () => sessions.find((s: Session) => s.id === selectedSessionId) ?? sessions[0] ?? null,
     [sessions, selectedSessionId],
   );
+
+  const pastLocked = currentSession ? isPastSessionDate(currentSession.date) : false;
+  const [pastUnlocked, setPastUnlocked] = useState(false);
+
+  useEffect(() => {
+    if (!currentSession?.id) {
+      setPastUnlocked(false);
+      return;
+    }
+    setPastUnlocked(sessionStorage.getItem(`pastSessionUnlocked:${currentSession.id}`) === '1');
+  }, [currentSession?.id]);
+
+  const readOnly = pastLocked && !pastUnlocked;
+
+  const unlockPastSession = () => {
+    if (!currentSession) return;
+    sessionStorage.setItem(`pastSessionUnlocked:${currentSession.id}`, '1');
+    setPastUnlocked(true);
+  };
+
+  useEffect(() => {
+    if (isLoading || !activeClass) return;
+    const list = sessions as Session[];
+    if (list.length === 0) return;
+    const today = localISODate();
+    const todaySess = list.find((s: Session) => s.date === today);
+    const classChanged = prevClassIdRef.current !== activeClass.id;
+    if (classChanged) {
+      prevClassIdRef.current = activeClass.id;
+      if (todaySess) setSelectedSessionId(todaySess.id);
+      else setSelectedSessionId(null);
+    } else if (selectedSessionId === null && todaySess) {
+      setSelectedSessionId(todaySess.id);
+    }
+  }, [activeClass?.id, isLoading, sessions, selectedSessionId]);
 
   const { data: attendanceList = [] } = useQuery({
     queryKey: ['attendance', currentSession?.id],
@@ -260,7 +317,7 @@ export default function SessionView() {
   });
 
   const handleAttendanceChange = (studentId: number, status: AttendanceStatus) => {
-    if (!currentSession) return;
+    if (!currentSession || readOnly) return;
     updateAttendance.mutate({ session_id: currentSession.id, student_id: studentId, status });
     if (status === 'absent') {
       const current = participationMap[studentId];
@@ -279,7 +336,7 @@ export default function SessionView() {
     patch: Partial<{ interruptions: number; contribution_rating: number; contribution_note: string }>,
     current: ParticipationRecord | undefined,
   ) => {
-    if (!currentSession) return;
+    if (!currentSession || readOnly) return;
     updateParticipation.mutate({
       session_id: currentSession.id,
       student_id: studentId,
@@ -304,7 +361,7 @@ export default function SessionView() {
   }, [students, quickContributionSearch]);
 
   const quickMarkPresent = () => {
-    if (!currentSession) return;
+    if (!currentSession || readOnly) return;
     if (quickMatches.length === 0) return;
     handleAttendanceChange(quickMatches[0].id, 'present');
     setQuickSearch('');
@@ -312,6 +369,7 @@ export default function SessionView() {
   };
 
   const quickIncreaseContribution = (studentId: number) => {
+    if (readOnly) return;
     const current = participationMap[studentId];
     const status: AttendanceStatus = attendanceMap[studentId]?.status ?? 'absent';
     if (status === 'absent') return;
@@ -374,6 +432,23 @@ export default function SessionView() {
 
       {currentSession && (
         <div className="rounded-xl bg-white border border-gray-200 shadow-sm overflow-hidden">
+          {pastLocked && !pastUnlocked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <LockClosedIcon className="h-5 w-5 shrink-0 text-amber-800" aria-hidden />
+                <span>
+                  This session&apos;s date is in the past. Editing is locked to avoid accidental changes.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={unlockPastSession}
+                className="shrink-0 rounded-md bg-amber-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-950"
+              >
+                Unlock
+              </button>
+            </div>
+          )}
           {/* Session header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50">
             <div className="flex items-center gap-3">
@@ -384,7 +459,7 @@ export default function SessionView() {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {editingDate === currentSession.id ? (
+              {editingDate === currentSession.id && !readOnly ? (
                 <>
                   <input
                     type="date"
@@ -408,8 +483,13 @@ export default function SessionView() {
                     <XMarkIcon className="h-4 w-4" />
                   </button>
                 </>
+              ) : readOnly ? (
+                <span className="text-xs text-gray-500">
+                  {currentSession.date ? `Date: ${currentSession.date}` : 'No date set'}
+                </span>
               ) : (
                 <button
+                  type="button"
                   onClick={() => { setDateVal(currentSession.date ?? ''); setEditingDate(currentSession.id); }}
                   className="flex items-center gap-1 text-xs text-gray-500 hover:text-indigo-600"
                 >
@@ -448,6 +528,7 @@ export default function SessionView() {
                   ref={quickSearchRef}
                   type="text"
                   value={quickSearch}
+                  disabled={readOnly}
                   placeholder="Type a student name, then press Enter"
                   onChange={(e) => setQuickSearch(e.target.value)}
                   onKeyDown={(e) => {
@@ -457,19 +538,20 @@ export default function SessionView() {
                     }
                     if (e.key === 'Escape') setQuickSearch('');
                   }}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 md:max-w-md"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 md:max-w-md disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                 />
                 <p className="text-xs text-gray-500">
                   Enter marks the first match as present.
                 </p>
               </div>
-              {quickSearch.trim() && (
+              {quickSearch.trim() && !readOnly && (
                 quickMatches.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {quickMatches.map((student) => {
                       const currentStatus = attendanceMap[student.id]?.status ?? 'absent';
                       return (
                         <button
+                          type="button"
                           key={student.id}
                           onClick={() => handleAttendanceChange(student.id, 'present')}
                           className="rounded-full border border-gray-300 bg-gray-50 px-3 py-1 text-xs text-gray-700 hover:bg-indigo-50 hover:border-indigo-300"
@@ -492,6 +574,7 @@ export default function SessionView() {
                   ref={quickContributionRef}
                   type="text"
                   value={quickContributionSearch}
+                  disabled={readOnly}
                   placeholder="Type a student name, then press Enter"
                   onChange={(e) => setQuickContributionSearch(e.target.value)}
                   onKeyDown={(e) => {
@@ -501,13 +584,13 @@ export default function SessionView() {
                     }
                     if (e.key === 'Escape') setQuickContributionSearch('');
                   }}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 md:max-w-md"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 md:max-w-md disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                 />
                 <p className="text-xs text-gray-500">
                   Enter increases the first match by +1 (max 3, not for absent students).
                 </p>
               </div>
-              {quickContributionSearch.trim() && (
+              {quickContributionSearch.trim() && !readOnly && (
                 quickContributionMatches.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {quickContributionMatches.map((student) => {
@@ -516,6 +599,7 @@ export default function SessionView() {
                       const disabled = currentStatus === 'absent';
                       return (
                         <button
+                          type="button"
                           key={`contrib-${student.id}`}
                           onClick={() => quickIncreaseContribution(student.id)}
                           disabled={disabled}
@@ -558,6 +642,7 @@ export default function SessionView() {
                       sessionId={currentSession.id}
                       attendance={attendanceMap[student.id]}
                       participation={participationMap[student.id]}
+                      readOnly={readOnly}
                       onAttendanceChange={handleAttendanceChange}
                       onParticipationChange={handleParticipationChange}
                     />
@@ -577,8 +662,9 @@ export default function SessionView() {
               value={sessionNotesVal}
               onChange={(e) => setSessionNotesVal(e.target.value)}
               rows={4}
+              disabled={readOnly}
               placeholder="Add notes for this session..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:cursor-not-allowed disabled:bg-gray-50"
             />
             <div className="mt-2 flex items-center justify-between">
               <p className="text-xs text-gray-500">
@@ -586,19 +672,23 @@ export default function SessionView() {
               </p>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  disabled={readOnly}
                   onClick={() => setSessionNotesVal(currentSession.notes ?? '')}
-                  className="rounded border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  className="rounded border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Reset
                 </button>
                 <button
+                  type="button"
+                  disabled={readOnly}
                   onClick={() =>
                     updateSession.mutate({
                       id: currentSession.id,
                       patch: { notes: sessionNotesVal.trim() ? sessionNotesVal : null },
                     })
                   }
-                  className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+                  className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-400"
                 >
                   Save notes
                 </button>

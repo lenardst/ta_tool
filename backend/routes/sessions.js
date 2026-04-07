@@ -15,6 +15,23 @@ router.get('/', (req, res) => {
   );
 });
 
+// GET /api/sessions/by-date?date=YYYY-MM-DD  — all sessions on that calendar day (any class)
+router.get('/by-date', (req, res) => {
+  const { date } = req.query;
+  if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: 'date query required (YYYY-MM-DD)' });
+  }
+  const rows = db
+    .prepare(
+      `SELECT s.* FROM sessions s
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.date = ?
+       ORDER BY c.name COLLATE NOCASE, s.session_number`
+    )
+    .all(date);
+  res.json(rows);
+});
+
 // ─── POST /api/sessions  (create one session) ─────────────────────────────────
 
 router.post('/', (req, res) => {

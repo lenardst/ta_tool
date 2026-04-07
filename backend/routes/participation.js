@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { pacificTodayYmd } = require('../pacificDate');
 const { appendLog } = require('../logger');
 const router = express.Router();
 
@@ -57,6 +58,7 @@ router.put('/', (req, res) => {
 router.get('/summary', (req, res) => {
   const { class_id } = req.query;
   if (!class_id) return res.status(400).json({ error: 'class_id required' });
+  const todayPt = pacificTodayYmd();
   const rows = db.prepare(`
     SELECT
       s.id                        AS student_id,
@@ -67,11 +69,12 @@ router.get('/summary', (req, res) => {
                      THEN p.contribution_rating END), 2)           AS avg_contribution
     FROM students s
     LEFT JOIN sessions ses ON ses.class_id = s.class_id
+      AND (ses.date IS NULL OR date(ses.date) IS NULL OR date(ses.date) <= ?)
     LEFT JOIN participation p ON p.session_id = ses.id AND p.student_id = s.id
     WHERE s.class_id = ?
     GROUP BY s.id
     ORDER BY s.sortable_name
-  `).all(class_id);
+  `).all(todayPt, class_id);
   res.json(rows);
 });
 

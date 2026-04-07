@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import type { Class } from '../api/client';
 
 interface ClassContextValue {
@@ -21,14 +22,19 @@ export function ClassProvider({ children }: { children: ReactNode }) {
     }
   });
 
-  const setActiveClass = (c: Class | null) => {
+  const setActiveClass = useCallback((c: Class | null) => {
     setActiveClassState(c);
     if (c) localStorage.setItem('activeClass', JSON.stringify(c));
     else localStorage.removeItem('activeClass');
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ activeClass, setActiveClass }),
+    [activeClass, setActiveClass],
+  );
 
   return (
-    <ClassContext.Provider value={{ activeClass, setActiveClass }}>
+    <ClassContext.Provider value={value}>
       {children}
     </ClassContext.Provider>
   );

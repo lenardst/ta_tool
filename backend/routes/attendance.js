@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { pacificTodayYmd } = require('../pacificDate');
 const { appendLog } = require('../logger');
 const router = express.Router();
 
@@ -45,23 +46,26 @@ router.put('/', (req, res) => {
 router.get('/summary', (req, res) => {
   const { class_id } = req.query;
   if (!class_id) return res.status(400).json({ error: 'class_id required' });
+  // Past sessions only (no date or date on/before today, Pacific). Missing attendance rows count as absent (UI default).
+  const todayPt = pacificTodayYmd();
   const rows = db.prepare(`
     SELECT
       s.id            AS student_id,
       s.name,
       s.sortable_name,
-      COUNT(a.id)     AS recorded,
-      SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END)  AS present,
-      SUM(CASE WHEN a.status='late'    THEN 1 ELSE 0 END)  AS late,
-      SUM(CASE WHEN a.status='absent'  THEN 1 ELSE 0 END)  AS absent,
-      SUM(CASE WHEN a.status='excused' THEN 1 ELSE 0 END)  AS excused
+      COUNT(ses.id)   AS recorded,
+      SUM(CASE WHEN COALESCE(a.status, 'absent') = 'present' THEN 1 ELSE 0 END)  AS present,
+      SUM(CASE WHEN COALESCE(a.status, 'absent') = 'late'    THEN 1 ELSE 0 END)  AS late,
+      SUM(CASE WHEN COALESCE(a.status, 'absent') = 'absent'  THEN 1 ELSE 0 END)  AS absent,
+      SUM(CASE WHEN COALESCE(a.status, 'absent') = 'excused' THEN 1 ELSE 0 END)  AS excused
     FROM students s
     LEFT JOIN sessions ses ON ses.class_id = s.class_id
+      AND (ses.date IS NULL OR date(ses.date) IS NULL OR date(ses.date) <= ?)
     LEFT JOIN attendance a ON a.session_id = ses.id AND a.student_id = s.id
     WHERE s.class_id = ?
     GROUP BY s.id
     ORDER BY s.sortable_name
-  `).all(class_id);
+  `).all(todayPt, class_id);
   res.json(rows);
 });
 

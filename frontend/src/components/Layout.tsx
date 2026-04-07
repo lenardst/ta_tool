@@ -1,8 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Class } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
+import { localISODate } from '../utils/calendar';
 import {
   AcademicCapIcon,
   CalendarDaysIcon,
@@ -25,6 +27,25 @@ const navItems = [
 export default function Layout() {
   const { activeClass, setActiveClass } = useActiveClass();
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: api.classes.list });
+  const todayStr = localISODate();
+  const { data: sessionsToday = [], isSuccess: todaySessionsReady } = useQuery({
+    queryKey: ['sessions', 'by-date', todayStr],
+    queryFn: () => api.sessions.listByDate(todayStr),
+    enabled: classes.length > 0,
+  });
+  const autoClassAppliedRef = useRef(false);
+
+  useEffect(() => {
+    if (autoClassAppliedRef.current || !todaySessionsReady || classes.length === 0) return;
+    autoClassAppliedRef.current = true;
+    if (sessionsToday.length === 0) return;
+    const todayClassIds = new Set(sessionsToday.map((s) => s.class_id));
+    const preferredId = sessionsToday[0].class_id;
+    if (!activeClass || !todayClassIds.has(activeClass.id)) {
+      const cls = classes.find((c: Class) => c.id === preferredId);
+      if (cls) setActiveClass(cls);
+    }
+  }, [todaySessionsReady, sessionsToday, classes, activeClass, setActiveClass]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">

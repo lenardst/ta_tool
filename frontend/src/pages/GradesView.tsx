@@ -220,18 +220,16 @@ export default function GradesView() {
     },
   });
 
-  // Per-student totals
+  // Per-student totals — missing grades count as 0 toward earned; max includes every assignment
   const totals = useMemo(() => {
     const out: Record<number, { earned: number; max: number }> = {};
     for (const s of students as Student[]) {
       let earned = 0;
       let max = 0;
       for (const a of assignments as Assignment[]) {
+        max += a.max_points;
         const pts = gradeMap[s.id]?.[a.id];
-        if (pts !== null && pts !== undefined) {
-          earned += pts;
-          max += a.max_points;
-        }
+        earned += pts != null && !Number.isNaN(pts) ? pts : 0;
       }
       out[s.id] = { earned, max };
     }

@@ -177,6 +177,8 @@ export const api = {
   sessions: {
     list: (classId: number) =>
       apiFetch<Session[]>(`/api/sessions?class_id=${classId}`),
+    listByDate: (isoDate: string) =>
+      apiFetch<Session[]>(`/api/sessions/by-date?date=${encodeURIComponent(isoDate)}`),
     create: (payload: { class_id: number; session_number?: number; date?: string; label?: string; notes?: string }) =>
       apiFetch<Session>('/api/sessions', { method: 'POST', body: JSON.stringify(payload) }),
     update: (id: number, patch: { date?: string | null; label?: string | null; notes?: string | null }) =>

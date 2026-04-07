@@ -122,20 +122,28 @@ export default function Dashboard() {
     enabled: !!activeClass,
   });
 
-  // grade map: studentId → { earned, max }
+  // grade map: studentId → { earned, max } — missing grades count as 0; max is full assignment total
   const gradeMap = useMemo(() => {
-    const totalMaxPoints = (assignments as Assignment[]).reduce((s, a) => s + a.max_points, 0);
-    const byStudent: Record<number, { earned: number; max: number }> = {};
+    const assignList = assignments as Assignment[];
+    const totalMaxPoints = assignList.reduce((s, a) => s + a.max_points, 0);
+    const lookup: Record<number, Record<number, number | null>> = {};
     for (const g of grades as GradeRecord[]) {
-      if (!byStudent[g.student_id]) byStudent[g.student_id] = { earned: 0, max: 0 };
-      const a = (assignments as Assignment[]).find((x) => x.id === g.assignment_id);
-      if (g.points !== null && g.points !== undefined && a) {
-        byStudent[g.student_id].earned += g.points;
-        byStudent[g.student_id].max += a.max_points;
+      if (!lookup[g.student_id]) lookup[g.student_id] = {};
+      lookup[g.student_id][g.assignment_id] = g.points;
+    }
+    const byStudent: Record<number, { earned: number; max: number }> = {};
+    for (const student of students as Student[]) {
+      let earned = 0;
+      let max = 0;
+      for (const a of assignList) {
+        max += a.max_points;
+        const pts = lookup[student.id]?.[a.id];
+        earned += pts != null ? pts : 0;
       }
+      byStudent[student.id] = { earned, max };
     }
     return { byStudent, totalMaxPoints };
-  }, [grades, assignments]);
+  }, [grades, assignments, students]);
 
   const attMap = useMemo(
     () => Object.fromEntries((attendanceSummary as AttendanceSummary[]).map((s) => [s.student_id, s])),

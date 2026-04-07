@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Session } from '../api/client';
@@ -12,8 +12,10 @@ import {
   XMarkIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,
+  LockClosedIcon,
 } from '@heroicons/react/24/outline';
 import { Link } from 'react-router-dom';
+import { isPastSessionDate } from '../utils/calendar';
 
 function NoClass() {
   return (
@@ -33,12 +35,32 @@ interface EditableCellProps {
   onSave: (v: string) => void;
   className?: string;
   type?: 'text' | 'date';
+  readOnly?: boolean;
 }
 
-function EditableCell({ value, placeholder, onSave, className = '', type = 'text' }: EditableCellProps) {
+function EditableCell({
+  value,
+  placeholder,
+  onSave,
+  className = '',
+  type = 'text',
+  readOnly = false,
+}: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  if (readOnly) {
+    return (
+      <span
+        className={`block w-full rounded px-1 py-0.5 text-gray-800 ${className} ${
+          value ? '' : 'italic text-gray-400'
+        }`}
+      >
+        {value || placeholder || '—'}
+      </span>
+    );
+  }
 
   const start = () => {
     setDraft(value);
@@ -96,11 +118,12 @@ function EditableCell({ value, placeholder, onSave, className = '', type = 'text
 
 interface SessionRowProps {
   session: Session;
+  rowLocked: boolean;
   onUpdate: (id: number, patch: { date?: string | null; label?: string | null }) => void;
   onDelete: (id: number) => void;
 }
 
-function SessionRow({ session, onUpdate, onDelete }: SessionRowProps) {
+function SessionRow({ session, rowLocked, onUpdate, onDelete }: SessionRowProps) {
   return (
     <tr className="hover:bg-gray-50 group">
       <td className="px-4 py-2 text-sm font-semibold text-gray-500 w-16 text-center">
@@ -109,6 +132,7 @@ function SessionRow({ session, onUpdate, onDelete }: SessionRowProps) {
       <td className="px-4 py-2 w-44">
         <EditableCell
           type="date"
+          readOnly={rowLocked}
           value={session.date ?? ''}
           placeholder="Set date"
           onSave={(v) => onUpdate(session.id, { date: v || null })}
@@ -116,6 +140,7 @@ function SessionRow({ session, onUpdate, onDelete }: SessionRowProps) {
       </td>
       <td className="px-4 py-2">
         <EditableCell
+          readOnly={rowLocked}
           value={session.label ?? ''}
           placeholder="Click to add title…"
           onSave={(v) => onUpdate(session.id, { label: v || null })}
@@ -123,13 +148,16 @@ function SessionRow({ session, onUpdate, onDelete }: SessionRowProps) {
         />
       </td>
       <td className="px-4 py-2 w-10">
-        <button
-          onClick={() => onDelete(session.id)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 rounded p-1"
-          title="Delete session"
-        >
-          <TrashIcon className="h-4 w-4" />
-        </button>
+        {!rowLocked && (
+          <button
+            type="button"
+            onClick={() => onDelete(session.id)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 rounded p-1"
+            title="Delete session"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        )}
       </td>
     </tr>
   );
@@ -141,6 +169,16 @@ export default function SessionsSetup() {
   const { activeClass } = useActiveClass();
   const qc = useQueryClient();
   const [extractMsg, setExtractMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const setupUnlockKey = activeClass ? `sessionsSetupPastUnlocked:${activeClass.id}` : '';
+  const [pastSetupUnlocked, setPastSetupUnlocked] = useState(false);
+
+  useEffect(() => {
+    if (!setupUnlockKey) {
+      setPastSetupUnlocked(false);
+      return;
+    }
+    setPastSetupUnlocked(sessionStorage.getItem(setupUnlockKey) === '1');
+  }, [setupUnlockKey]);
 
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ['sessions', activeClass?.id],
@@ -183,6 +221,15 @@ export default function SessionsSetup() {
 
   if (!activeClass) return <NoClass />;
 
+  const sessionList = sessions as Session[];
+  const hasPastLockedRows = sessionList.some((s) => isPastSessionDate(s.date) && !pastSetupUnlocked);
+
+  const unlockSetupPast = () => {
+    if (!setupUnlockKey) return;
+    sessionStorage.setItem(setupUnlockKey, '1');
+    setPastSetupUnlocked(true);
+  };
+
   return (
     <div className="space-y-5 max-w-3xl">
       {/* Header */}
@@ -195,7 +242,7 @@ export default function SessionsSetup() {
           <button
             onClick={() => {
               if (
-                (sessions as Session[]).length > 0 &&
+                sessionList.length > 0 &&
                 !confirm(
                   'Extracting from Canvas will update existing sessions and add new ones. Continue?'
                 )
@@ -242,7 +289,7 @@ export default function SessionsSetup() {
       )}
 
       {/* Info banner when no sessions */}
-      {!isLoading && (sessions as Session[]).length === 0 && (
+      {!isLoading && sessionList.length === 0 && (
         <div className="rounded-xl border border-dashed border-indigo-300 bg-indigo-50 p-8 text-center">
           <SparklesIcon className="h-8 w-8 text-indigo-400 mx-auto mb-2" />
           <p className="text-sm font-medium text-indigo-700 mb-1">No sessions yet</p>
@@ -254,8 +301,26 @@ export default function SessionsSetup() {
       )}
 
       {/* Session table */}
-      {(sessions as Session[]).length > 0 && (
+      {sessionList.length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          {hasPastLockedRows && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <LockClosedIcon className="h-5 w-5 shrink-0 text-amber-800" aria-hidden />
+                <span>
+                  Sessions with a date in the past are locked. Unlock to edit dates, titles, or delete
+                  them.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={unlockSetupPast}
+                className="shrink-0 rounded-md bg-amber-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-950"
+              >
+                Unlock
+              </button>
+            </div>
+          )}
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -266,10 +331,11 @@ export default function SessionsSetup() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(sessions as Session[]).map((s) => (
+              {sessionList.map((s) => (
                 <SessionRow
                   key={s.id}
                   session={s}
+                  rowLocked={isPastSessionDate(s.date) && !pastSetupUnlocked}
                   onUpdate={(id, patch) => updateMutation.mutate({ id, patch })}
                   onDelete={(id) => {
                     if (confirm('Delete this session and all its attendance/participation data?')) {
@@ -296,7 +362,7 @@ export default function SessionsSetup() {
       )}
 
       {/* Link to recording view */}
-      {(sessions as Session[]).length > 0 && (
+      {sessionList.length > 0 && (
         <p className="text-xs text-gray-400">
           Sessions are ready.{' '}
           <Link to="/session" className="text-indigo-600 hover:underline">
