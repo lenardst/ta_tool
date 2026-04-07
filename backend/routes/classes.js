@@ -2,9 +2,17 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET /api/classes — all classes (shared across users)
-router.get('/', (_req, res) => {
-  res.json(db.prepare('SELECT * FROM classes ORDER BY name').all());
+// GET /api/classes — classes the user is a member of (admins see all)
+router.get('/', (req, res) => {
+  if (req.user.is_admin) {
+    return res.json(db.prepare('SELECT * FROM classes ORDER BY name').all());
+  }
+  res.json(db.prepare(
+    `SELECT c.* FROM classes c
+     JOIN class_members cm ON cm.class_id = c.id
+     WHERE cm.user_id = ?
+     ORDER BY c.name`
+  ).all(req.user.id));
 });
 
 // POST /api/classes  — import a canvas course (optionally scoped to a section)
@@ -30,6 +38,15 @@ router.post('/', (req, res) => {
   );
 
   const classId = info.lastInsertRowid;
+  // Add creator as member; if admin, add all users
+  if (req.user.is_admin) {
+    const users = db.prepare('SELECT id FROM users').all();
+    const addMember = db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)');
+    const addAll = db.transaction((list) => { for (const u of list) addMember.run(classId, u.id); });
+    addAll(users);
+  } else {
+    db.prepare('INSERT OR IGNORE INTO class_members(class_id, user_id) VALUES(?,?)').run(classId, req.user.id);
+  }
   res.status(201).json(db.prepare('SELECT * FROM classes WHERE id=?').get(classId));
 });
 

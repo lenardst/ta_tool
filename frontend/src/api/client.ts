@@ -134,15 +134,29 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   auth: {
     login: (username: string, password: string) =>
-      apiFetch<{ token: string; username: string }>('/api/auth/login', {
+      apiFetch<{ token: string; username: string; is_admin: number }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
     register: (username: string, password: string) =>
-      apiFetch<{ token: string; username: string }>('/api/auth/register', {
+      apiFetch<{ token: string; username: string; is_admin: number }>('/api/auth/register', {
         method: 'POST',
         body: JSON.stringify({ username, password }),
       }),
+  },
+
+  // ─── Admin ────────────────────────────────────────────────────────────────
+
+  admin: {
+    users: () => apiFetch<{ id: number; username: string; is_admin: number }[]>('/api/admin/users'),
+    classes: () => apiFetch<(Class & { member_ids: number[] })[]>('/api/admin/classes'),
+    addMember: (class_id: number, user_id: number) =>
+      apiFetch<{ ok: boolean }>('/api/admin/class-members', {
+        method: 'POST',
+        body: JSON.stringify({ class_id, user_id }),
+      }),
+    removeMember: (class_id: number, user_id: number) =>
+      apiFetch<{ ok: boolean }>(`/api/admin/class-members/${class_id}/${user_id}`, { method: 'DELETE' }),
   },
 
   // ─── Settings ─────────────────────────────────────────────────────────────

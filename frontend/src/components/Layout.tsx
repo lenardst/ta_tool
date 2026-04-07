@@ -12,6 +12,7 @@ import {
   CalendarDaysIcon,
   ChartBarIcon,
   Cog6ToothIcon,
+  ShieldCheckIcon,
   TableCellsIcon,
   QueueListIcon,
   UserGroupIcon,
@@ -28,7 +29,7 @@ const navItems = [
 
 export default function Layout() {
   const { activeClass, setActiveClass } = useActiveClass();
-  const { username, logout } = useAuth();
+  const { username, logout, is_admin } = useAuth();
   const navigate = useNavigate();
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: api.classes.list });
   const todayStr = localISODate();
@@ -99,6 +100,21 @@ export default function Layout() {
               {label}
             </NavLink>
           ))}
+          {is_admin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-indigo-200 hover:bg-indigo-700 hover:text-white'
+                }`
+              }
+            >
+              <ShieldCheckIcon className="h-5 w-5 flex-shrink-0" />
+              Admin
+            </NavLink>
+          )}
         </nav>
 
         {/* User / logout */}

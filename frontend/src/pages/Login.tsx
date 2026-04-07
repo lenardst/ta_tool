@@ -17,8 +17,8 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const { token, username: u } = await api.auth.login(username, password);
-      login(token, u);
+      const { token, username: u, is_admin } = await api.auth.login(username, password);
+      login(token, u, !!is_admin);
       navigate('/');
     } catch {
       setError('Invalid username or password.');

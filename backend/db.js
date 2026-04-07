@@ -162,6 +162,12 @@ const db = {
     // Migration: add user_id to classes (existing rows get user_id=0, orphaned)
     try { _sqlDb.run('ALTER TABLE classes ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
 
+    // Migration: add is_admin column to users
+    try { _sqlDb.run('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+
+    // Migration: set lenard as admin
+    try { _sqlDb.run("UPDATE users SET is_admin=1 WHERE username='lenard'"); } catch (_) {}
+
     // Migration: recreate settings table with per-user composite primary key
     try {
       _sqlDb.exec('SELECT user_id FROM settings LIMIT 0');
@@ -189,7 +195,14 @@ const db = {
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         username      TEXT    NOT NULL UNIQUE,
         password_hash TEXT    NOT NULL,
+        is_admin      INTEGER NOT NULL DEFAULT 0,
         created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS class_members (
+        class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+        user_id  INTEGER NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+        PRIMARY KEY(class_id, user_id)
       );
 
       CREATE TABLE IF NOT EXISTS settings (
@@ -355,6 +368,12 @@ const db = {
     _sqlDb.run(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_canvas_user ON students(class_id, canvas_user_id)'
     );
+
+    // Migration: seed class_members for any existing classes/users that aren't yet linked.
+    _sqlDb.run(`
+      INSERT OR IGNORE INTO class_members(class_id, user_id)
+      SELECT c.id, u.id FROM classes c CROSS JOIN users u
+    `);
 
     save();
     return db;

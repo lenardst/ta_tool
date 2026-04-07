@@ -26,10 +26,11 @@ router.post('/register', async (req, res, next) => {
       hash,
     );
 
-    const token = jwt.sign({ id: info.lastInsertRowid, username: String(username).trim() }, JWT_SECRET, {
+    const newUser = db.prepare('SELECT id, username, is_admin FROM users WHERE id=?').get(info.lastInsertRowid);
+    const token = jwt.sign({ id: newUser.id, username: newUser.username, is_admin: newUser.is_admin }, JWT_SECRET, {
       expiresIn: '30d',
     });
-    res.status(201).json({ token, username: String(username).trim() });
+    res.status(201).json({ token, username: newUser.username, is_admin: newUser.is_admin });
   } catch (err) {
     next(err);
   }
@@ -49,8 +50,8 @@ router.post('/login', async (req, res, next) => {
     const valid = await bcrypt.compare(String(password), user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, username: user.username });
+    const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, username: user.username, is_admin: user.is_admin });
   } catch (err) {
     next(err);
   }

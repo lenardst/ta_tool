@@ -27,6 +27,7 @@ app.use('/api/assignments',   require('./routes/assignments'));
 app.use('/api/grades',        require('./routes/grades'));
 app.use('/api/llm',           require('./routes/llm'));
 app.use('/api/email',         require('./routes/email'));
+app.use('/api/admin',         require('./routes/admin'));
 
 app.use((err, _req, res, _next) => {
   console.error(err);

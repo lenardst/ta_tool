@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ClassProvider } from './context/ClassContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import Admin from './pages/Admin';
 import Dashboard from './pages/Dashboard';
 import SessionsSetup from './pages/SessionsSetup';
 import SessionView from './pages/SessionView';
@@ -41,6 +42,7 @@ export default function App() {
                 <Route path="grades" element={<GradesView />} />
                 <Route path="participants" element={<Participants />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="admin" element={<Admin />} />
               </Route>
             </Routes>
           </BrowserRouter>
