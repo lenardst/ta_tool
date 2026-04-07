@@ -13,7 +13,6 @@ app.use(express.json());
 
 // Public: auth + one-time migration endpoint (self-protected by MIGRATE_SECRET)
 app.use('/api/auth',    require('./routes/auth'));
-app.use('/api/migrate', require('./routes/migrate'));
 
 // All routes below require a valid JWT
 app.use('/api', requireAuth);
