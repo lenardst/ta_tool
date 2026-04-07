@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { sendBackup } = require('../services/backup');
 const router = express.Router();
 
 function isClassAdmin(classId, userId) {
@@ -72,6 +73,17 @@ router.delete('/class-members/:classId/:userId', (req, res) => {
   }
   db.prepare('DELETE FROM class_members WHERE class_id=? AND user_id=?').run(classId, userId);
   res.json({ ok: true });
+});
+
+// POST /api/admin/backup  — trigger an immediate backup email
+router.post('/backup', async (req, res, next) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Global admin only' });
+  try {
+    await sendBackup();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /api/admin/classes/:id/restore  — recover a soft-deleted class
