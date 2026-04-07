@@ -168,6 +168,9 @@ const db = {
     // Migration: add role column to class_members ('admin' | 'member')
     try { _sqlDb.run("ALTER TABLE class_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'"); } catch (_) {}
 
+    // Migration: soft deletes on classes
+    try { _sqlDb.run('ALTER TABLE classes ADD COLUMN deleted_at TEXT'); } catch (_) {}
+
     // Migration: set lenard as admin
     try { _sqlDb.run("UPDATE users SET is_admin=1 WHERE username='lenard'"); } catch (_) {}
 
@@ -223,7 +226,8 @@ const db = {
         canvas_base_url     TEXT    NOT NULL,
         canvas_section_id   TEXT,
         canvas_section_name TEXT,
-        user_id             INTEGER NOT NULL DEFAULT 0
+        user_id             INTEGER NOT NULL DEFAULT 0,
+        deleted_at          TEXT
       );
 
       CREATE TABLE IF NOT EXISTS students (

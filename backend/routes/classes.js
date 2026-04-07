@@ -2,15 +2,15 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET /api/classes — classes the user is a member of (admins see all)
+// GET /api/classes — classes the user is a member of (admins see all), excluding soft-deleted
 router.get('/', (req, res) => {
   if (req.user.is_admin) {
-    return res.json(db.prepare('SELECT * FROM classes ORDER BY name').all());
+    return res.json(db.prepare('SELECT * FROM classes WHERE deleted_at IS NULL ORDER BY name').all());
   }
   res.json(db.prepare(
     `SELECT c.* FROM classes c
      JOIN class_members cm ON cm.class_id = c.id
-     WHERE cm.user_id = ?
+     WHERE cm.user_id = ? AND c.deleted_at IS NULL
      ORDER BY c.name`
   ).all(req.user.id));
 });
@@ -118,9 +118,9 @@ router.get('/:id/students', (req, res) => {
   );
 });
 
-// DELETE /api/classes/:id
+// DELETE /api/classes/:id  — soft delete (data preserved for recovery)
 router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM classes WHERE id=?').run(req.params.id);
+  db.prepare("UPDATE classes SET deleted_at=datetime('now') WHERE id=?").run(req.params.id);
   res.json({ ok: true });
 });
 

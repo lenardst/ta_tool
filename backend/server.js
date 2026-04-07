@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db');
 const requireAuth = require('./middleware/auth');
+const { scheduleBackups } = require('./services/backup');
 
 const app = express();
 app.use(cors());
@@ -47,6 +48,7 @@ const PORT = process.env.PORT || 3001;
 db.initDb()
   .then(() => {
     app.listen(PORT, () => console.log(`Backend listening on http://localhost:${PORT}`));
+    scheduleBackups();
   })
   .catch((err) => {
     console.error('Failed to initialise database:', err);

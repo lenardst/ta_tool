@@ -74,4 +74,11 @@ router.delete('/class-members/:classId/:userId', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/admin/classes/:id/restore  — recover a soft-deleted class
+router.post('/classes/:id/restore', (req, res) => {
+  if (!req.user.is_admin) return res.status(403).json({ error: 'Global admin only' });
+  db.prepare('UPDATE classes SET deleted_at=NULL WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;
