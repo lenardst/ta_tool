@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-// GET /api/classes
+// GET /api/classes — all classes (shared across users)
 router.get('/', (_req, res) => {
   res.json(db.prepare('SELECT * FROM classes ORDER BY name').all());
 });
@@ -11,7 +11,6 @@ router.get('/', (_req, res) => {
 router.post('/', (req, res) => {
   const { canvas_course_id, name, canvas_base_url, canvas_section_id, canvas_section_name } = req.body;
 
-  // Check if this (course, section) combination is already imported
   const existing = canvas_section_id
     ? db.prepare('SELECT * FROM classes WHERE canvas_course_id=? AND canvas_section_id=?')
         .get(canvas_course_id, canvas_section_id)
@@ -45,7 +44,6 @@ router.post('/:id/sync-students', async (req, res, next) => {
       return res.status(400).json({ error: 'students must be an array' });
     }
 
-    // Deduplicate incoming payload by Canvas user id. Keep first occurrence.
     const incomingByCanvasId = new Map();
     for (const s of students) {
       const canvas_user_id = String(s?.canvas_user_id ?? '').trim();
@@ -58,7 +56,6 @@ router.post('/:id/sync-students', async (req, res, next) => {
       });
     }
 
-    // Never overwrite existing entries: only insert students not yet present.
     const upsert = db.prepare(`
       INSERT INTO students(class_id, canvas_user_id, name, email, sortable_name)
       VALUES(@class_id, @canvas_user_id, @name, @email, @sortable_name)

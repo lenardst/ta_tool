@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const DB_PATH = path.join(__dirname, 'ta_tool.db');
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'ta_tool.db');
 
 /** @type {import('sql.js').Database | null} */
 let _sqlDb = null;
@@ -159,10 +159,44 @@ const db = {
     try { _sqlDb.run('ALTER TABLE classes ADD COLUMN canvas_section_id TEXT'); } catch (_) {}
     try { _sqlDb.run('ALTER TABLE classes ADD COLUMN canvas_section_name TEXT'); } catch (_) {}
 
+    // Migration: add user_id to classes (existing rows get user_id=0, orphaned)
+    try { _sqlDb.run('ALTER TABLE classes ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+
+    // Migration: recreate settings table with per-user composite primary key
+    try {
+      _sqlDb.exec('SELECT user_id FROM settings LIMIT 0');
+      // Column already exists — no migration needed
+    } catch (e) {
+      const msg = String(e?.message ?? '');
+      if (!msg.includes('no such table')) {
+        // Table exists but lacks user_id column — recreate it
+        _sqlDb.run('ALTER TABLE settings RENAME TO _settings_legacy');
+        _sqlDb.run(`
+          CREATE TABLE settings (
+            user_id INTEGER NOT NULL,
+            key     TEXT    NOT NULL,
+            value   TEXT    NOT NULL,
+            PRIMARY KEY(user_id, key)
+          )
+        `);
+        _sqlDb.run('DROP TABLE IF EXISTS _settings_legacy');
+      }
+      // If "no such table": table will be created fresh by the exec block below
+    }
+
     _sqlDb.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        username      TEXT    NOT NULL UNIQUE,
+        password_hash TEXT    NOT NULL,
+        created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS settings (
-        key   TEXT PRIMARY KEY,
-        value TEXT NOT NULL
+        user_id INTEGER NOT NULL,
+        key     TEXT    NOT NULL,
+        value   TEXT    NOT NULL,
+        PRIMARY KEY(user_id, key)
       );
 
       CREATE TABLE IF NOT EXISTS classes (
@@ -171,7 +205,8 @@ const db = {
         name                TEXT    NOT NULL,
         canvas_base_url     TEXT    NOT NULL,
         canvas_section_id   TEXT,
-        canvas_section_name TEXT
+        canvas_section_name TEXT,
+        user_id             INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS students (

@@ -107,10 +107,21 @@ export interface GradeRecord {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('auth_token');
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options?.headers ?? {}),
+    },
     ...options,
   });
+  if (res.status === 401) {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_username');
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API ${res.status}: ${text}`);
@@ -118,9 +129,24 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ─── Settings ─────────────────────────────────────────────────────────────────
+// ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export const api = {
+  auth: {
+    login: (username: string, password: string) =>
+      apiFetch<{ token: string; username: string }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    register: (username: string, password: string) =>
+      apiFetch<{ token: string; username: string }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+  },
+
+  // ─── Settings ─────────────────────────────────────────────────────────────
+
   settings: {
     get: () => apiFetch<Settings>('/api/settings'),
     set: (key: string, value: string) =>

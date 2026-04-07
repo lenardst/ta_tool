@@ -2,8 +2,8 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
-router.get('/', (_req, res) => {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
+router.get('/', (req, res) => {
+  const rows = db.prepare('SELECT key, value FROM settings WHERE user_id=?').all(req.user.id);
   const obj = Object.fromEntries(rows.map(r => [r.key, r.value]));
   res.json(obj);
 });
@@ -11,8 +11,9 @@ router.get('/', (_req, res) => {
 router.put('/:key', (req, res) => {
   const { key } = req.params;
   const { value } = req.body;
-  db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
-    .run(key, value);
+  db.prepare(
+    'INSERT INTO settings(user_id, key, value) VALUES(?,?,?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value'
+  ).run(req.user.id, key, value);
   res.json({ key, value });
 });
 

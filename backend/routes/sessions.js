@@ -15,7 +15,7 @@ router.get('/', (req, res) => {
   );
 });
 
-// GET /api/sessions/by-date?date=YYYY-MM-DD  — all sessions on that calendar day (any class)
+// GET /api/sessions/by-date?date=YYYY-MM-DD  — all sessions on that calendar day (user's classes only)
 router.get('/by-date', (req, res) => {
   const { date } = req.query;
   if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -63,8 +63,8 @@ router.post('/extract', async (req, res, next) => {
     const cls = db.prepare('SELECT * FROM classes WHERE id=?').get(class_id);
     if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-    // Load Canvas credentials
-    const settingsRows = db.prepare('SELECT key, value FROM settings').all();
+    // Load Canvas credentials for this user
+    const settingsRows = db.prepare('SELECT key, value FROM settings WHERE user_id=?').all(req.user.id);
     const settings = Object.fromEntries(settingsRows.map((r) => [r.key, r.value]));
     const { canvas_base_url, canvas_token } = settings;
     if (!canvas_base_url || !canvas_token) {

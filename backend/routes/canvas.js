@@ -3,8 +3,8 @@ const fetch = require('node-fetch');
 const db = require('../db');
 const router = express.Router();
 
-function getSettings() {
-  const rows = db.prepare('SELECT key, value FROM settings').all();
+function getSettings(userId) {
+  const rows = db.prepare('SELECT key, value FROM settings WHERE user_id=?').all(userId);
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
@@ -38,7 +38,7 @@ async function canvasFetchAll(path, settings) {
 // GET /api/canvas/courses
 router.get('/courses', async (req, res, next) => {
   try {
-    const settings = getSettings();
+    const settings = getSettings(req.user.id);
     const courses = await canvasFetchAll('/courses?enrollment_state=active&per_page=100', settings);
     res.json(courses);
   } catch (err) {
@@ -49,7 +49,7 @@ router.get('/courses', async (req, res, next) => {
 // GET /api/canvas/courses/:id/sections
 router.get('/courses/:id/sections', async (req, res, next) => {
   try {
-    const settings = getSettings();
+    const settings = getSettings(req.user.id);
     const sections = await canvasFetchAll(
       `/courses/${req.params.id}/sections?per_page=100`,
       settings,
@@ -63,7 +63,7 @@ router.get('/courses/:id/sections', async (req, res, next) => {
 // GET /api/canvas/courses/:id/students[?section_id=X]
 router.get('/courses/:id/students', async (req, res, next) => {
   try {
-    const settings = getSettings();
+    const settings = getSettings(req.user.id);
     const { section_id } = req.query;
 
     let students;

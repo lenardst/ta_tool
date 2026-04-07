@@ -1,12 +1,14 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Class } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
+import { useAuth } from '../context/AuthContext';
 import { localISODate } from '../utils/calendar';
 import {
   AcademicCapIcon,
+  ArrowRightStartOnRectangleIcon,
   CalendarDaysIcon,
   ChartBarIcon,
   Cog6ToothIcon,
@@ -26,6 +28,8 @@ const navItems = [
 
 export default function Layout() {
   const { activeClass, setActiveClass } = useActiveClass();
+  const { username, logout } = useAuth();
+  const navigate = useNavigate();
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: api.classes.list });
   const todayStr = localISODate();
   const { data: sessionsToday = [], isSuccess: todaySessionsReady } = useQuery({
@@ -96,6 +100,18 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* User / logout */}
+        <div className="px-3 py-3 border-t border-indigo-700">
+          <div className="text-xs text-indigo-400 mb-1 truncate">{username}</div>
+          <button
+            onClick={() => { logout(); navigate('/login'); }}
+            className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm font-medium text-indigo-200 hover:bg-indigo-700 hover:text-white transition-colors"
+          >
+            <ArrowRightStartOnRectangleIcon className="h-5 w-5 flex-shrink-0" />
+            Sign out
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}

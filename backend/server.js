@@ -2,11 +2,20 @@ require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 const db = require('./db');
+const requireAuth = require('./middleware/auth');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Public: auth endpoints (no token required)
+app.use('/api/auth', require('./routes/auth'));
+
+// All routes below require a valid JWT
+app.use('/api', requireAuth);
 
 app.use('/api/canvas',        require('./routes/canvas'));
 app.use('/api/settings',      require('./routes/settings'));
@@ -23,6 +32,13 @@ app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: err.message });
 });
+
+// Serve the built React frontend (production only)
+const frontendDist = path.join(__dirname, '..', 'frontend', 'dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (_req, res) => res.sendFile(path.join(frontendDist, 'index.html')));
+}
 
 const PORT = process.env.PORT || 3001;
 
