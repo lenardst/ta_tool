@@ -34,7 +34,7 @@ interface CourseRowProps {
   importing: boolean;
 }
 
-function CourseRow({ course, baseUrl, importedKeys, onImport, importing }: CourseRowProps) {
+function CourseRow({ course, importedKeys, onImport, importing }: CourseRowProps) {
   const [expanded, setExpanded] = useState(false);
 
   const {
