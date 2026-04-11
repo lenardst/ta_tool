@@ -104,6 +104,27 @@ export interface GradeRecord {
   points: number | null;
 }
 
+export interface GroupAssignment {
+  student_id: number;
+  student_name: string;
+  student_email: string;
+  group_number: number;
+  role: string;
+  email_subject: string;
+  email_body: string;
+}
+
+export interface GroupResult {
+  interpretation: string;
+  assignments: GroupAssignment[];
+  missed_students: { id: number; name: string }[];
+}
+
+export interface GroupSendResult {
+  sent: number[];
+  failed: { student_id: number; error: string }[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
@@ -300,6 +321,25 @@ export const api = {
       apiFetch<{ message: string }>('/api/llm/chat', {
         method: 'POST',
         body: JSON.stringify({ messages }),
+      }),
+  },
+
+  // ─── Groups ───────────────────────────────────────────────────────────────
+
+  groups: {
+    generate: (classId: number, prompt: string) =>
+      apiFetch<GroupResult>('/api/groups/generate', {
+        method: 'POST',
+        body: JSON.stringify({ class_id: classId, prompt }),
+      }),
+    send: (
+      classId: number,
+      emails: { student_id: number; subject: string; body: string }[],
+      smtpPass?: string,
+    ) =>
+      apiFetch<GroupSendResult>('/api/groups/send', {
+        method: 'POST',
+        body: JSON.stringify({ class_id: classId, emails, smtp_pass: smtpPass }),
       }),
   },
 

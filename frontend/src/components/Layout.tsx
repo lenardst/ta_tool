@@ -16,6 +16,7 @@ import {
   TableCellsIcon,
   QueueListIcon,
   UserGroupIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 
 const navItems = [
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/session',      label: 'Record',       Icon: CalendarDaysIcon },
   { to: '/grades',       label: 'Grades',       Icon: TableCellsIcon },
   { to: '/participants', label: 'Participants', Icon: UserGroupIcon },
+  { to: '/groups',       label: 'Groups',       Icon: Squares2X2Icon },
   { to: '/settings',     label: 'Settings',     Icon: Cog6ToothIcon },
 ];
 
