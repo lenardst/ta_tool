@@ -28,7 +28,7 @@ interface RoleDefinition {
   fileType: string | null;
 }
 
-// ─── Role colour palette (cycles for > 8 roles) ──────────────────────────────
+// ─── Role colour palette ──────────────────────────────────────────────────────
 
 const ROLE_COLOURS = [
   'bg-indigo-100 text-indigo-800 border-indigo-200',
@@ -48,6 +48,27 @@ function roleColour(roleName: string, roleIndex: Map<string, number>) {
     roleIndex.set(roleName, idx);
   }
   return ROLE_COLOURS[idx % ROLE_COLOURS.length];
+}
+
+// ─── Personalise a template string with student data ─────────────────────────
+// Mirrors the server-side personalize() function in backend/routes/groups.js
+
+function personalizeTemplate(
+  template: string,
+  a: GroupAssignment,
+  date: string,
+): string {
+  const parts = a.student_sortable_name.split(',');
+  const lastName = parts[0]?.trim() || a.student_name;
+  const firstName = parts[1]?.trim() || a.student_name.split(' ')[0] || a.student_name;
+  return template
+    .replace(/\{\{name\}\}/g, a.student_name)
+    .replace(/\{\{first_name\}\}/g, firstName)
+    .replace(/\{\{last_name\}\}/g, lastName)
+    .replace(/\{\{group_number\}\}/g, String(a.group_number))
+    .replace(/\{\{date\}\}/g, date)
+    .replace(/\{\{role\}\}/g, a.role)
+    .replace(/\{\{group_members\}\}/g, a.group_members);
 }
 
 // ─── File reader helper ───────────────────────────────────────────────────────
@@ -89,10 +110,7 @@ function GroupCard({ groupNumber, members, roleIndex }: GroupCardProps) {
           <li key={m.student_id} className="px-3 py-2">
             <p className="text-xs font-medium text-gray-800 truncate">{m.student_name}</p>
             <span
-              className={`inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded border ${roleColour(
-                m.role,
-                roleIndex,
-              )}`}
+              className={`inline-block mt-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded border ${roleColour(m.role, roleIndex)}`}
             >
               {m.role}
             </span>
@@ -134,11 +152,7 @@ function EmailRow({
   const isObserver = assignment.group_number === 0;
 
   return (
-    <li
-      className={`border border-gray-200 rounded-xl overflow-hidden ${
-        !selected ? 'opacity-50' : ''
-      }`}
-    >
+    <li className={`border border-gray-200 rounded-xl overflow-hidden ${!selected ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-3 px-4 py-3 bg-white">
         <input
           type="checkbox"
@@ -149,22 +163,14 @@ function EmailRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-gray-800">{assignment.student_name}</span>
-            <span
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${roleColour(
-                assignment.role,
-                roleIndex,
-              )}`}
-            >
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${roleColour(assignment.role, roleIndex)}`}>
               {assignment.role}
             </span>
             <span className="text-xs text-gray-400">
               {isObserver ? 'Observer' : `Group ${assignment.group_number}`}
             </span>
             {hasAttachment && (
-              <span
-                className="flex items-center gap-0.5 text-[10px] text-indigo-500"
-                title={`Attachment: ${attachmentName}`}
-              >
+              <span className="flex items-center gap-0.5 text-[10px] text-indigo-500" title={`Attachment: ${attachmentName}`}>
                 <PaperClipIcon className="h-3 w-3" />
                 {attachmentName}
               </span>
@@ -180,11 +186,7 @@ function EmailRow({
           className="text-gray-400 hover:text-indigo-600 flex-shrink-0"
           title={expanded ? 'Collapse' : 'Expand to edit'}
         >
-          {expanded ? (
-            <ChevronDownIcon className="h-4 w-4" />
-          ) : (
-            <ChevronRightIcon className="h-4 w-4" />
-          )}
+          {expanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
         </button>
       </div>
 
@@ -226,31 +228,40 @@ function NoClass() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+const DEFAULT_SUBJECT_TPL = 'Group assignment';
+const DEFAULT_BODY_TPL =
+  'Hi {{first_name}},\n\nFor the group exercise in the class on {{date}}, you are assigned to role {{role}}. Your group is {{group_members}}.';
 
 export default function Groups() {
   const { activeClass } = useActiveClass();
 
-  // ── Step 1 state ──────────────────────────────────────────────────────────
+  // Step 1 — request
   const [prompt, setPrompt] = useState('');
+  const [exerciseDate, setExerciseDate] = useState('');
   const [generateError, setGenerateError] = useState<string | null>(null);
 
-  // Role definitions (descriptions + attachments)
+  // Shared email template
+  const [subjectTpl, setSubjectTpl] = useState(DEFAULT_SUBJECT_TPL);
+  const [bodyTpl, setBodyTpl] = useState(DEFAULT_BODY_TPL);
+
+  // Role definitions (descriptions + attachments, optional)
   const [roleDefs, setRoleDefs] = useState<RoleDefinition[]>([]);
   const [showRoleDefs, setShowRoleDefs] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
-  // Ref map for hidden file inputs keyed by role id
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // ── Step 2 state ──────────────────────────────────────────────────────────
+  // Step 2 — assignments + local email edits
   const [assignments, setAssignments] = useState<GroupAssignment[]>([]);
   const [interpretation, setInterpretation] = useState('');
   const [missedStudents, setMissedStudents] = useState<{ id: number; name: string }[]>([]);
+  // Individual email overrides (subject/body per student_id)
   const [subjects, setSubjects] = useState<Record<number, string>>({});
   const [bodies, setBodies] = useState<Record<number, string>>({});
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  // ── Step 3 state ──────────────────────────────────────────────────────────
+  // Step 3 — send
   const [smtpPass, setSmtpPass] = useState('');
   const [sendNote, setSendNote] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -265,10 +276,7 @@ export default function Groups() {
 
   function addRoleDef(name = '') {
     const id = crypto.randomUUID();
-    setRoleDefs((prev) => [
-      ...prev,
-      { id, name, description: '', fileBase64: null, fileName: null, fileType: null },
-    ]);
+    setRoleDefs((prev) => [...prev, { id, name, description: '', fileBase64: null, fileName: null, fileType: null }]);
     setShowRoleDefs(true);
   }
 
@@ -289,14 +297,24 @@ export default function Groups() {
     }
     try {
       const base64 = await readFileAsBase64(file);
-      updateRoleDef(roleId, {
-        fileBase64: base64,
-        fileName: file.name,
-        fileType: file.type || 'application/octet-stream',
-      });
+      updateRoleDef(roleId, { fileBase64: base64, fileName: file.name, fileType: file.type || 'application/octet-stream' });
     } catch {
       setFileError('Could not read file. Please try again.');
     }
+  }
+
+  // ── Template helper ───────────────────────────────────────────────────────
+
+  /** Re-apply the shared template to all students using current exerciseDate. */
+  function applyTemplate(currentAssignments: GroupAssignment[], currentDate: string) {
+    const subj: Record<number, string> = {};
+    const bod: Record<number, string> = {};
+    for (const a of currentAssignments) {
+      subj[a.student_id] = personalizeTemplate(subjectTpl, a, currentDate);
+      bod[a.student_id] = personalizeTemplate(bodyTpl, a, currentDate);
+    }
+    setSubjects(subj);
+    setBodies(bod);
   }
 
   // ── Generate mutation ─────────────────────────────────────────────────────
@@ -310,11 +328,11 @@ export default function Groups() {
           description: r.description.trim(),
           has_attachment: Boolean(r.fileBase64),
         }));
-      return api.groups.generate(
-        activeClass!.id,
-        prompt,
-        roleDescriptionsToSend.length > 0 ? roleDescriptionsToSend : undefined,
-      );
+      return api.groups.generate(activeClass!.id, prompt, {
+        date: exerciseDate.trim() || undefined,
+        emailTemplate: { subject: subjectTpl, body: bodyTpl },
+        roleDescriptions: roleDescriptionsToSend.length > 0 ? roleDescriptionsToSend : undefined,
+      });
     },
     onSuccess: (result) => {
       setGenerateError(null);
@@ -322,6 +340,7 @@ export default function Groups() {
       setInterpretation(result.interpretation);
       setMissedStudents(result.missed_students ?? []);
 
+      // Use the already-personalized values from the backend
       const subj: Record<number, string> = {};
       const bod: Record<number, string> = {};
       const sel = new Set<number>();
@@ -340,9 +359,7 @@ export default function Groups() {
       const detectedRoles = [...new Set(result.assignments.map((a) => a.role))];
       setRoleDefs((prev) => {
         const existingNames = new Set(prev.map((r) => r.name.toLowerCase().trim()));
-        const toAdd = detectedRoles.filter(
-          (name) => !existingNames.has(name.toLowerCase().trim()),
-        );
+        const toAdd = detectedRoles.filter((name) => !existingNames.has(name.toLowerCase().trim()));
         if (toAdd.length === 0) return prev;
         setShowRoleDefs(true);
         return [
@@ -399,9 +416,7 @@ export default function Groups() {
         setSendNote(`Sent to ${result.sent.length} student(s).`);
       } else {
         setSendNote(
-          `Sent to ${result.sent.length}; ${failCount} failed (${result.failed
-            .map((f) => f.error)
-            .join('; ')}).`,
+          `Sent to ${result.sent.length}; ${failCount} failed (${result.failed.map((f) => f.error).join('; ')}).`,
         );
       }
     },
@@ -411,7 +426,7 @@ export default function Groups() {
     },
   });
 
-  // ── Derived state ─────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
 
   const roleIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -437,7 +452,6 @@ export default function Groups() {
     );
   }, [assignments]);
 
-  // role name (lowercase) → { fileName }
   const attachmentByRole = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of roleDefs) {
@@ -450,12 +464,7 @@ export default function Groups() {
 
   const allSelected = assignments.length > 0 && selected.size === assignments.length;
   const smtpOk = emailStatus?.smtp_configured === true;
-  const canSend =
-    smtpOk &&
-    selected.size > 0 &&
-    smtpPass.trim() &&
-    assignments.length > 0 &&
-    !sendMutation.isPending;
+  const canSend = smtpOk && selected.size > 0 && smtpPass.trim() && assignments.length > 0 && !sendMutation.isPending;
 
   if (!activeClass) return <NoClass />;
 
@@ -468,8 +477,8 @@ export default function Groups() {
           Group Assignment
         </h1>
         <p className="text-gray-500 mt-1">
-          Describe your grouping in plain English. Optionally define roles with
-          descriptions and file attachments before generating.
+          Describe your grouping in plain English. The AI assigns students to groups;
+          emails are generated from the template below.
         </p>
       </div>
 
@@ -480,12 +489,70 @@ export default function Groups() {
           Describe the grouping
         </h2>
 
-        <textarea
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="e.g. Assign everyone to triads. In each triad randomly assign one of three roles: Michael, Phuc, and Georg. Put the extras as observers."
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
+        {/* Date */}
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-gray-500">
+            Exercise date <span className="font-normal text-gray-400">(used in email as <code className="bg-gray-100 px-1 rounded">{'{{date}}'}</code>)</span>
+          </span>
+          <input
+            type="text"
+            className="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="e.g. Tuesday, April 15"
+            value={exerciseDate}
+            onChange={(e) => setExerciseDate(e.target.value)}
+          />
+        </label>
+
+        {/* Prompt */}
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-gray-500">Grouping request</span>
+          <textarea
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm min-h-[90px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="e.g. Assign everyone to triads. In each triad randomly assign one of three roles: Michael, Phuc, and Georg. Put the extras as observers."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+        </label>
+
+        {/* Email template */}
+        <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-3">
+          <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+            Email template
+          </p>
+          <p className="text-xs text-gray-400">
+            Placeholders: <code className="bg-gray-100 px-1 rounded">{'{{first_name}}'}</code>{' '}
+            <code className="bg-gray-100 px-1 rounded">{'{{name}}'}</code>{' '}
+            <code className="bg-gray-100 px-1 rounded">{'{{date}}'}</code>{' '}
+            <code className="bg-gray-100 px-1 rounded">{'{{role}}'}</code>{' '}
+            <code className="bg-gray-100 px-1 rounded">{'{{group_members}}'}</code>{' '}
+            <code className="bg-gray-100 px-1 rounded">{'{{group_number}}'}</code>
+          </p>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-500">Subject</span>
+            <input
+              className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={subjectTpl}
+              onChange={(e) => setSubjectTpl(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-gray-500">Body</span>
+            <textarea
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono min-h-[100px] bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={bodyTpl}
+              onChange={(e) => setBodyTpl(e.target.value)}
+            />
+          </label>
+          {assignments.length > 0 && (
+            <button
+              type="button"
+              onClick={() => applyTemplate(assignments, exerciseDate)}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              Re-apply template to all emails
+            </button>
+          )}
+        </div>
 
         {/* Role definitions (optional, collapsible) */}
         <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 space-y-3">
@@ -494,11 +561,7 @@ export default function Groups() {
             onClick={() => setShowRoleDefs((v) => !v)}
             className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-800"
           >
-            {showRoleDefs ? (
-              <ChevronDownIcon className="h-4 w-4" />
-            ) : (
-              <ChevronRightIcon className="h-4 w-4" />
-            )}
+            {showRoleDefs ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
             Role descriptions &amp; attachments
             <span className="text-xs font-normal text-gray-400">(optional — fills automatically after generating)</span>
           </button>
@@ -506,11 +569,7 @@ export default function Groups() {
           {showRoleDefs && (
             <div className="space-y-3 pt-1">
               {roleDefs.map((role) => (
-                <div
-                  key={role.id}
-                  className="rounded-lg border border-gray-200 bg-white p-3 space-y-2"
-                >
-                  {/* Role name + remove */}
+                <div key={role.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -519,25 +578,16 @@ export default function Groups() {
                       onChange={(e) => updateRoleDef(role.id, { name: e.target.value })}
                       className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <button
-                      type="button"
-                      onClick={() => removeRoleDef(role.id)}
-                      className="text-gray-400 hover:text-red-500"
-                      title="Remove role"
-                    >
+                    <button type="button" onClick={() => removeRoleDef(role.id)} className="text-gray-400 hover:text-red-500" title="Remove role">
                       <XMarkIcon className="h-4 w-4" />
                     </button>
                   </div>
-
-                  {/* Description */}
                   <textarea
-                    placeholder="Describe this role's responsibilities (used by AI to write better emails)…"
+                    placeholder="Describe this role's responsibilities (context for AI)…"
                     value={role.description}
                     onChange={(e) => updateRoleDef(role.id, { description: e.target.value })}
                     className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm min-h-[70px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-
-                  {/* File attachment */}
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -549,18 +599,10 @@ export default function Groups() {
                     </button>
                     {role.fileName && (
                       <>
-                        <span className="text-xs text-gray-600 truncate max-w-[180px]">
-                          {role.fileName}
-                        </span>
+                        <span className="text-xs text-gray-600 truncate max-w-[180px]">{role.fileName}</span>
                         <button
                           type="button"
-                          onClick={() =>
-                            updateRoleDef(role.id, {
-                              fileBase64: null,
-                              fileName: null,
-                              fileType: null,
-                            })
-                          }
+                          onClick={() => updateRoleDef(role.id, { fileBase64: null, fileName: null, fileType: null })}
                           className="text-xs text-red-400 hover:text-red-600"
                         >
                           Remove
@@ -571,9 +613,7 @@ export default function Groups() {
                       type="file"
                       className="sr-only"
                       ref={(el) => { fileInputRefs.current[role.id] = el; }}
-                      onChange={(e) =>
-                        void handleFileChange(role.id, e.target.files?.[0] ?? null)
-                      }
+                      onChange={(e) => void handleFileChange(role.id, e.target.files?.[0] ?? null)}
                     />
                   </div>
                 </div>
@@ -598,7 +638,7 @@ export default function Groups() {
           )}
         </div>
 
-        {/* Generate button */}
+        {/* Generate */}
         <div className="flex items-center gap-3 flex-wrap">
           <button
             type="button"
@@ -606,14 +646,8 @@ export default function Groups() {
             onClick={() => generateMutation.mutate()}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
           >
-            <ArrowPathIcon
-              className={`h-4 w-4 ${generateMutation.isPending ? 'animate-spin' : ''}`}
-            />
-            {generateMutation.isPending
-              ? 'Generating…'
-              : assignments.length > 0
-              ? 'Re-generate'
-              : 'Generate groups'}
+            <ArrowPathIcon className={`h-4 w-4 ${generateMutation.isPending ? 'animate-spin' : ''}`} />
+            {generateMutation.isPending ? 'Generating…' : assignments.length > 0 ? 'Re-generate' : 'Generate groups'}
           </button>
           {assignments.length > 0 && (
             <span className="text-xs text-gray-400">{assignments.length} student(s) assigned</span>
@@ -645,9 +679,7 @@ export default function Groups() {
             <div className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold">
-                  {missedStudents.length} student(s) not assigned:
-                </span>{' '}
+                <span className="font-semibold">{missedStudents.length} student(s) not assigned:</span>{' '}
                 {missedStudents.map((s) => s.name).join(', ')}. Try re-generating.
               </div>
             </div>
@@ -655,22 +687,15 @@ export default function Groups() {
 
           {/* Group grid */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-              Groups
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Groups</h2>
             <div className="flex gap-3 overflow-x-auto pb-2">
               {[...groupMap.entries()].map(([groupNum, members]) => (
-                <GroupCard
-                  key={groupNum}
-                  groupNumber={groupNum}
-                  members={members}
-                  roleIndex={roleIndex}
-                />
+                <GroupCard key={groupNum} groupNumber={groupNum} members={members} roleIndex={roleIndex} />
               ))}
             </div>
           </div>
 
-          {/* Email list */}
+          {/* Individual email list */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -705,12 +730,8 @@ export default function Groups() {
                     selected={selected.has(a.student_id)}
                     hasAttachment={attachmentByRole.has(roleLower)}
                     attachmentName={attName}
-                    onSubjectChange={(v) =>
-                      setSubjects((prev) => ({ ...prev, [a.student_id]: v }))
-                    }
-                    onBodyChange={(v) =>
-                      setBodies((prev) => ({ ...prev, [a.student_id]: v }))
-                    }
+                    onSubjectChange={(v) => setSubjects((prev) => ({ ...prev, [a.student_id]: v }))}
+                    onBodyChange={(v) => setBodies((prev) => ({ ...prev, [a.student_id]: v }))}
                     onToggle={() =>
                       setSelected((prev) => {
                         const next = new Set(prev);
@@ -741,9 +762,7 @@ export default function Groups() {
             )}
 
             <label className="flex flex-col gap-1 max-w-xs">
-              <span className="text-xs font-medium text-gray-500">
-                Stanford password (not stored)
-              </span>
+              <span className="text-xs font-medium text-gray-500">Stanford password (not stored)</span>
               <input
                 type="password"
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -761,28 +780,21 @@ export default function Groups() {
                 onClick={() => sendMutation.mutate()}
                 className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
               >
-                <PaperAirplaneIcon className="h-4 w-4" />
-                {sendMutation.isPending
-                  ? 'Sending…'
-                  : `Send to ${selected.size} student(s)`}
+                <PaperAirplaneIcon className={`h-4 w-4 ${sendMutation.isPending ? 'animate-pulse' : ''}`} />
+                {sendMutation.isPending ? 'Sending…' : `Send to ${selected.size} student(s)`}
               </button>
-              <span className="text-xs text-gray-400">
-                {selected.size} of {assignments.length} selected
-                {attachmentByRole.size > 0 &&
-                  ` · ${attachmentByRole.size} role attachment(s)`}
-              </span>
             </div>
 
-            {sendError && (
-              <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 mt-0.5" />
-                {sendError}
-              </div>
-            )}
             {sendNote && (
               <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
                 <CheckCircleIcon className="h-4 w-4 flex-shrink-0" />
                 {sendNote}
+              </div>
+            )}
+            {sendError && (
+              <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                {sendError}
               </div>
             )}
           </div>

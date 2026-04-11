@@ -114,9 +114,11 @@ export interface GradeRecord {
 export interface GroupAssignment {
   student_id: number;
   student_name: string;
+  student_sortable_name: string;
   student_email: string;
   group_number: number;
   role: string;
+  group_members: string;
   email_subject: string;
   email_body: string;
 }
@@ -337,11 +339,21 @@ export const api = {
     generate: (
       classId: number,
       prompt: string,
-      roleDescriptions?: { name: string; description: string; has_attachment?: boolean }[],
+      opts?: {
+        date?: string;
+        emailTemplate?: { subject: string; body: string };
+        roleDescriptions?: { name: string; description: string; has_attachment?: boolean }[];
+      },
     ) =>
       apiFetch<GroupResult>('/api/groups/generate', {
         method: 'POST',
-        body: JSON.stringify({ class_id: classId, prompt, role_descriptions: roleDescriptions }),
+        body: JSON.stringify({
+          class_id: classId,
+          prompt,
+          date: opts?.date,
+          email_template: opts?.emailTemplate,
+          role_descriptions: opts?.roleDescriptions,
+        }),
       }),
     send: (
       classId: number,

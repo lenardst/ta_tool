@@ -22,38 +22,64 @@ function getTransport(smtpPass) {
   });
 }
 
+/**
+ * Replace template placeholders for one student.
+ * Supported tags: {{name}}, {{first_name}}, {{last_name}},
+ *                 {{group_number}}, {{date}}, {{role}}, {{group_members}}
+ */
+function personalize(template, student, groupNumber, { date = '', role = '', groupMembers = '' } = {}) {
+  const parts = String(student.sortable_name || '').split(',');
+  const lastName = parts[0]?.trim() || student.name;
+  const firstName = parts[1]?.trim() || (student.name || '').split(' ')[0] || student.name;
+  return String(template ?? '')
+    .replace(/\{\{name\}\}/g, student.name)
+    .replace(/\{\{first_name\}\}/g, firstName)
+    .replace(/\{\{last_name\}\}/g, lastName)
+    .replace(/\{\{group_number\}\}/g, String(groupNumber))
+    .replace(/\{\{date\}\}/g, date)
+    .replace(/\{\{role\}\}/g, role)
+    .replace(/\{\{group_members\}\}/g, groupMembers);
+}
+
+/** Format a list of names as "Alice", "Alice and Bob", or "Alice, Bob, and Carol". */
+function formatNameList(names) {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return names.slice(0, -1).join(', ') + ', and ' + names[names.length - 1];
+}
+
+// ─── System prompt ────────────────────────────────────────────────────────────
+// The LLM only needs to produce group assignments — no email content.
+// Email content is generated server-side from a single shared template.
+
 const SYSTEM_PROMPT = `You are a teaching assistant tool for group management.
 
 Given a class roster and a natural-language grouping request you will:
-1. Parse the request to understand: group size, roles, and how to handle remainders (e.g. observers, uneven groups).
-2. RANDOMLY assign students to groups and roles. Shuffle the student list before assigning — do not follow alphabetical order.
-3. Generate a warm, professional, personalized email for EVERY student that clearly states their group number and role.
-4. If role descriptions are provided, use them to write richer, more specific email content for each role.
-5. If a role is marked as having an attached document, naturally mention in the email that a document is attached with further details.
+1. Parse the request to understand group size, roles, and how to handle remainders
+   (e.g. observers, uneven groups).
+2. RANDOMLY assign students to groups and roles — shuffle the list, do not go
+   alphabetically.
 
-Return ONLY a valid JSON object (no markdown fences, no explanation) with this exact structure:
+Return ONLY a valid JSON object (no markdown fences, no explanation):
 {
-  "interpretation": "Short summary of what you did, e.g. '9 triads + 2 observers. Roles: Michael, Phuc, Georg.'",
+  "interpretation": "Short summary, e.g. '9 triads + 2 observers. Roles: Michael, Phuc, Georg.'",
   "assignments": [
-    {
-      "student_id": 123,
-      "group_number": 1,
-      "role": "Michael",
-      "email_subject": "Your Group Assignment",
-      "email_body": "Hi Alice,\\n\\nYou've been assigned to Group 1 in the role of Michael.\\n\\n..."
-    }
+    { "student_id": 123, "group_number": 1, "role": "Michael" }
   ]
 }
 
 Rules:
-- Every student must appear in assignments exactly once.
-- group_number must be a positive integer; observers can use group number 0.
-- Roles should match the names in the request exactly.
-- Make emails warm and specific: include the group number, the role, and any role context.
-- Keep email subjects concise (≤ 70 characters).
-- Do NOT include meta-commentary or markdown in the JSON values.`;
+- Every student must appear in assignments EXACTLY ONCE.
+- group_number must be a positive integer; observers use 0.
+- Do NOT include meta-commentary or markdown inside JSON string values.`;
 
-// POST /api/groups/generate  { class_id, prompt, role_descriptions? }
+const DEFAULT_SUBJECT = 'Group assignment';
+const DEFAULT_BODY =
+  'Hi {{first_name}},\n\nFor the group exercise in the class on {{date}}, you are assigned to role {{role}}. Your group is {{group_members}}.';
+
+// POST /api/groups/generate
+// Body: { class_id, prompt, date?, email_template?: {subject, body}, role_descriptions? }
 router.post('/generate', async (req, res, next) => {
   try {
     const classId = Number(req.body.class_id);
@@ -79,7 +105,13 @@ router.post('/generate', async (req, res, next) => {
       return res.status(400).json({ error: 'No students in class' });
     }
 
-    // Build role descriptions section for the prompt
+    // Email template (caller-supplied or default)
+    const date = String(req.body.date || '').trim();
+    const tplInput = req.body.email_template || {};
+    const subjectTpl = String(tplInput.subject || DEFAULT_SUBJECT).trim() || DEFAULT_SUBJECT;
+    const bodyTpl = String(tplInput.body || DEFAULT_BODY).trim() || DEFAULT_BODY;
+
+    // Build optional role descriptions block
     const roleDescriptions = Array.isArray(req.body.role_descriptions)
       ? req.body.role_descriptions.filter(
           (r) => r && typeof r.name === 'string' && r.name.trim(),
@@ -89,10 +121,13 @@ router.post('/generate', async (req, res, next) => {
     let roleSection = '';
     if (roleDescriptions.length > 0) {
       const lines = roleDescriptions.map((r) => {
-        const desc = typeof r.description === 'string' && r.description.trim()
-          ? `: ${r.description.trim()}`
+        const desc =
+          typeof r.description === 'string' && r.description.trim()
+            ? `: ${r.description.trim()}`
+            : '';
+        const attachNote = r.has_attachment
+          ? ' (a document will be attached to this email)'
           : '';
-        const attachNote = r.has_attachment ? ' (a document will be attached to this email)' : '';
         return `- ${r.name.trim()}${desc}${attachNote}`;
       });
       roleSection = `\nRole descriptions:\n${lines.join('\n')}\n`;
@@ -113,7 +148,7 @@ Request: ${prompt}`;
       { temperature: 0.9 },
     );
 
-    // Extract JSON object from LLM response (handles occasional markdown fences)
+    // Extract JSON from LLM response (handles occasional markdown fences)
     const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error(
@@ -127,20 +162,46 @@ Request: ${prompt}`;
       throw new Error('LLM response missing assignments array');
     }
 
+    // Build student lookup map
     const studentMap = new Map(students.map((s) => [s.id, s]));
 
+    // Build group → member names map (for {{group_members}} substitution)
+    const groupMembersMap = new Map(); // groupNumber -> string[]
+    for (const a of result.assignments) {
+      const groupNum = Number(a.group_number) || 0;
+      if (groupNum === 0) continue; // observers have no group peers
+      const s = studentMap.get(Number(a.student_id));
+      if (!s) continue;
+      const list = groupMembersMap.get(groupNum) || [];
+      list.push(s.name);
+      groupMembersMap.set(groupNum, list);
+    }
+
+    // Personalise each assignment using the single shared template
     const enriched = result.assignments
       .filter((a) => studentMap.has(Number(a.student_id)))
       .map((a) => {
         const s = studentMap.get(Number(a.student_id));
+        const groupNum = Number(a.group_number) || 0;
+        const roleName = String(a.role || '');
+
+        // group_members = all other names in the same group
+        const allGroupNames = groupMembersMap.get(groupNum) || [];
+        const otherNames = allGroupNames.filter((name) => name !== s.name);
+        const groupMembersStr = formatNameList(otherNames);
+
+        const extra = { date, role: roleName, groupMembers: groupMembersStr };
+
         return {
           student_id: Number(a.student_id),
           student_name: s.name,
+          student_sortable_name: s.sortable_name || '',
           student_email: s.email || '',
-          group_number: Number(a.group_number) || 0,
-          role: String(a.role || ''),
-          email_subject: String(a.email_subject || '').trim(),
-          email_body: String(a.email_body || ''),
+          group_number: groupNum,
+          role: roleName,
+          group_members: groupMembersStr,
+          email_subject: personalize(subjectTpl, s, groupNum, extra),
+          email_body: personalize(bodyTpl, s, groupNum, extra),
         };
       });
 
@@ -164,7 +225,6 @@ Request: ${prompt}`;
 
 // POST /api/groups/send
 // Body: { class_id, emails: [{student_id, subject, body, role}], smtp_pass?, role_attachments? }
-// role_attachments: [{ role, filename, content (base64), content_type }]
 router.post('/send', async (req, res, next) => {
   try {
     const smtpPass =
