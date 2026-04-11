@@ -163,9 +163,9 @@ function SessionRow({ session, rowLocked, onUpdate, onDelete }: SessionRowProps)
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main content (also embedded in Settings) ─────────────────────────────────
 
-export default function SessionsSetup() {
+export function SessionsContent() {
   const { activeClass } = useActiveClass();
   const qc = useQueryClient();
   const [extractMsg, setExtractMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -231,7 +231,7 @@ export default function SessionsSetup() {
   };
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -366,10 +366,18 @@ export default function SessionsSetup() {
         <p className="text-xs text-gray-400">
           Sessions are ready.{' '}
           <Link to="/session" className="text-indigo-600 hover:underline">
-            Go to Session Recording →
+            Go to Class Participation →
           </Link>
         </p>
       )}
+    </div>
+  );
+}
+
+export default function SessionsSetup() {
+  return (
+    <div className="max-w-3xl">
+      <SessionsContent />
     </div>
   );
 }

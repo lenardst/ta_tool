@@ -62,7 +62,7 @@ router.get('/summary', (req, res) => {
     LEFT JOIN sessions ses ON ses.class_id = s.class_id
       AND (ses.date IS NULL OR date(ses.date) IS NULL OR date(ses.date) <= ?)
     LEFT JOIN attendance a ON a.session_id = ses.id AND a.student_id = s.id
-    WHERE s.class_id = ?
+    WHERE s.class_id = ? AND s.deleted_at IS NULL
     GROUP BY s.id
     ORDER BY s.sortable_name
   `).all(todayPt, class_id);
