@@ -14,17 +14,16 @@ import {
   Cog6ToothIcon,
   ShieldCheckIcon,
   TableCellsIcon,
-  QueueListIcon,
   UserGroupIcon,
+  EnvelopeIcon,
 } from '@heroicons/react/24/outline';
 
 const navItems = [
-  { to: '/',             label: 'Dashboard',    Icon: ChartBarIcon },
-  { to: '/sessions',     label: 'Sessions',     Icon: QueueListIcon },
-  { to: '/session',      label: 'Record',       Icon: CalendarDaysIcon },
-  { to: '/grades',       label: 'Grades',       Icon: TableCellsIcon },
-  { to: '/participants', label: 'Participants', Icon: UserGroupIcon },
-  { to: '/settings',     label: 'Settings',     Icon: Cog6ToothIcon },
+  { to: '/',             label: 'Dashboard',          Icon: ChartBarIcon },
+  { to: '/session',      label: 'Class Participation', Icon: CalendarDaysIcon },
+  { to: '/grades',       label: 'Assignments',         Icon: TableCellsIcon },
+  { to: '/participants', label: 'Contact Students',    Icon: EnvelopeIcon },
+  { to: '/settings',     label: 'Settings',            Icon: Cog6ToothIcon },
 ];
 
 export default function Layout() {
@@ -111,7 +110,7 @@ export default function Layout() {
             }
           >
             <ShieldCheckIcon className="h-5 w-5 flex-shrink-0" />
-            {is_admin ? 'Admin' : 'Sharing'}
+            Access &amp; Backups
           </NavLink>
         </nav>
 

@@ -397,10 +397,10 @@ export default function SessionView() {
         <p className="text-lg font-medium">No sessions configured</p>
         <p className="text-sm mb-4">Set up sessions before recording attendance.</p>
         <Link
-          to="/sessions"
+          to="/settings"
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
         >
-          Go to Sessions Setup →
+          Go to Settings →
         </Link>
       </div>
     );

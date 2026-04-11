@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { CanvasCourse, CanvasSection, Class } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
+import { SessionsContent } from './SessionsSetup';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -287,7 +288,7 @@ export default function Settings() {
   });
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
 
       {/* Canvas credentials */}
@@ -380,6 +381,9 @@ export default function Settings() {
           )}
         </div>
       </SectionCard>
+
+      {/* Sessions setup */}
+      <SessionsContent />
 
       {/* Email / SMTP settings */}
       <SectionCard title="Email Settings">
