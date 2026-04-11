@@ -67,18 +67,27 @@ router.post('/:id/sync-students', async (req, res, next) => {
     }
 
     const upsert = db.prepare(`
-      INSERT INTO students(class_id, canvas_user_id, name, email, sortable_name)
-      VALUES(@class_id, @canvas_user_id, @name, @email, @sortable_name)
+      INSERT INTO students(class_id, canvas_user_id, name, email, sortable_name, deleted_at)
+      VALUES(@class_id, @canvas_user_id, @name, @email, @sortable_name, NULL)
       ON CONFLICT(class_id, canvas_user_id) DO UPDATE SET
         name=excluded.name,
         email=excluded.email,
-        sortable_name=excluded.sortable_name
+        sortable_name=excluded.sortable_name,
+        deleted_at=NULL
     `);
-    const syncMany = db.transaction((list) => {
-      for (const s of list) upsert.run({ class_id: cls.id, ...s });
+    const markDropped = db.prepare(`
+      UPDATE students
+      SET deleted_at = datetime('now')
+      WHERE class_id = @class_id
+        AND canvas_user_id NOT IN (SELECT value FROM json_each(@canvas_ids))
+        AND deleted_at IS NULL
+    `);
+    const syncMany = db.transaction((list, classId, canvasIds) => {
+      for (const s of list) upsert.run({ class_id: classId, ...s });
+      markDropped.run({ class_id: classId, canvas_ids: JSON.stringify(canvasIds) });
     });
-    syncMany([...incomingByCanvasId.values()]);
-    res.json(db.prepare('SELECT * FROM students WHERE class_id=? ORDER BY sortable_name').all(cls.id));
+    syncMany([...incomingByCanvasId.values()], cls.id, [...incomingByCanvasId.keys()]);
+    res.json(db.prepare('SELECT * FROM students WHERE class_id=? AND deleted_at IS NULL ORDER BY sortable_name').all(cls.id));
   } catch (err) {
     next(err);
   }
@@ -100,12 +109,12 @@ router.post('/:id/students/sample', (req, res) => {
     ? db
         .prepare(
           `SELECT * FROM students
-           WHERE class_id=? AND TRIM(COALESCE(email,'')) != ''
+           WHERE class_id=? AND deleted_at IS NULL AND TRIM(COALESCE(email,'')) != ''
            ORDER BY RANDOM() LIMIT ?`
         )
         .all(req.params.id, count)
     : db
-        .prepare('SELECT * FROM students WHERE class_id=? ORDER BY RANDOM() LIMIT ?')
+        .prepare('SELECT * FROM students WHERE class_id=? AND deleted_at IS NULL ORDER BY RANDOM() LIMIT ?')
         .all(req.params.id, count);
 
   res.json(rows);
@@ -114,7 +123,7 @@ router.post('/:id/students/sample', (req, res) => {
 // GET /api/classes/:id/students
 router.get('/:id/students', (req, res) => {
   res.json(
-    db.prepare('SELECT * FROM students WHERE class_id=? ORDER BY sortable_name').all(req.params.id)
+    db.prepare('SELECT * FROM students WHERE class_id=? AND deleted_at IS NULL ORDER BY sortable_name').all(req.params.id)
   );
 });
 

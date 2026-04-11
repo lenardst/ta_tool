@@ -171,6 +171,9 @@ const db = {
     // Migration: soft deletes on classes
     try { _sqlDb.run('ALTER TABLE classes ADD COLUMN deleted_at TEXT'); } catch (_) {}
 
+    // Migration: soft deletes on students (marks students who dropped the course)
+    try { _sqlDb.run('ALTER TABLE students ADD COLUMN deleted_at TEXT'); } catch (_) {}
+
     // Migration: set lenard as admin
     try { _sqlDb.run("UPDATE users SET is_admin=1 WHERE username='lenard'"); } catch (_) {}
 
@@ -236,7 +239,8 @@ const db = {
         canvas_user_id  TEXT    NOT NULL,
         name            TEXT    NOT NULL,
         email           TEXT    NOT NULL DEFAULT '',
-        sortable_name   TEXT    NOT NULL DEFAULT ''
+        sortable_name   TEXT    NOT NULL DEFAULT '',
+        deleted_at      TEXT
       );
 
       CREATE TABLE IF NOT EXISTS sessions (
