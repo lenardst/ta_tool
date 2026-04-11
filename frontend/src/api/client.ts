@@ -334,19 +334,29 @@ export const api = {
   // ─── Groups ───────────────────────────────────────────────────────────────
 
   groups: {
-    generate: (classId: number, prompt: string) =>
+    generate: (
+      classId: number,
+      prompt: string,
+      roleDescriptions?: { name: string; description: string; has_attachment?: boolean }[],
+    ) =>
       apiFetch<GroupResult>('/api/groups/generate', {
         method: 'POST',
-        body: JSON.stringify({ class_id: classId, prompt }),
+        body: JSON.stringify({ class_id: classId, prompt, role_descriptions: roleDescriptions }),
       }),
     send: (
       classId: number,
-      emails: { student_id: number; subject: string; body: string }[],
+      emails: { student_id: number; subject: string; body: string; role: string }[],
       smtpPass?: string,
+      roleAttachments?: { role: string; filename: string; content: string; content_type: string }[],
     ) =>
       apiFetch<GroupSendResult>('/api/groups/send', {
         method: 'POST',
-        body: JSON.stringify({ class_id: classId, emails, smtp_pass: smtpPass }),
+        body: JSON.stringify({
+          class_id: classId,
+          emails,
+          smtp_pass: smtpPass,
+          role_attachments: roleAttachments,
+        }),
       }),
   },
 

@@ -10,7 +10,7 @@ const { scheduleBackups } = require('./services/backup');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '25mb' }));
 
 // Public: auth endpoint (no token required)
 app.use('/api/auth', require('./routes/auth'));

@@ -28,6 +28,8 @@ Given a class roster and a natural-language grouping request you will:
 1. Parse the request to understand: group size, roles, and how to handle remainders (e.g. observers, uneven groups).
 2. RANDOMLY assign students to groups and roles. Shuffle the student list before assigning — do not follow alphabetical order.
 3. Generate a warm, professional, personalized email for EVERY student that clearly states their group number and role.
+4. If role descriptions are provided, use them to write richer, more specific email content for each role.
+5. If a role is marked as having an attached document, naturally mention in the email that a document is attached with further details.
 
 Return ONLY a valid JSON object (no markdown fences, no explanation) with this exact structure:
 {
@@ -45,13 +47,13 @@ Return ONLY a valid JSON object (no markdown fences, no explanation) with this e
 
 Rules:
 - Every student must appear in assignments exactly once.
-- group_number must be a positive integer; observers can use a special group number (e.g. 0 or 99).
+- group_number must be a positive integer; observers can use group number 0.
 - Roles should match the names in the request exactly.
-- Make emails warm and specific: include the group number, the role, any role context from the request.
+- Make emails warm and specific: include the group number, the role, and any role context.
 - Keep email subjects concise (≤ 70 characters).
 - Do NOT include meta-commentary or markdown in the JSON values.`;
 
-// POST /api/groups/generate  { class_id, prompt }
+// POST /api/groups/generate  { class_id, prompt, role_descriptions? }
 router.post('/generate', async (req, res, next) => {
   try {
     const classId = Number(req.body.class_id);
@@ -77,12 +79,30 @@ router.post('/generate', async (req, res, next) => {
       return res.status(400).json({ error: 'No students in class' });
     }
 
+    // Build role descriptions section for the prompt
+    const roleDescriptions = Array.isArray(req.body.role_descriptions)
+      ? req.body.role_descriptions.filter(
+          (r) => r && typeof r.name === 'string' && r.name.trim(),
+        )
+      : [];
+
+    let roleSection = '';
+    if (roleDescriptions.length > 0) {
+      const lines = roleDescriptions.map((r) => {
+        const desc = typeof r.description === 'string' && r.description.trim()
+          ? `: ${r.description.trim()}`
+          : '';
+        const attachNote = r.has_attachment ? ' (a document will be attached to this email)' : '';
+        return `- ${r.name.trim()}${desc}${attachNote}`;
+      });
+      roleSection = `\nRole descriptions:\n${lines.join('\n')}\n`;
+    }
+
     const studentList = students.map((s) => `${s.id}: ${s.name}`).join('\n');
 
     const userMessage = `Class: ${cls.name}
 Students (${students.length} total):
-${studentList}
-
+${studentList}${roleSection}
 Request: ${prompt}`;
 
     const rawResponse = await chatCompletion(
@@ -107,7 +127,6 @@ Request: ${prompt}`;
       throw new Error('LLM response missing assignments array');
     }
 
-    // Build lookup map
     const studentMap = new Map(students.map((s) => [s.id, s]));
 
     const enriched = result.assignments
@@ -125,7 +144,6 @@ Request: ${prompt}`;
         };
       });
 
-    // Warn if any students were missed by the LLM
     const assignedIds = new Set(enriched.map((a) => a.student_id));
     const missed = students.filter((s) => !assignedIds.has(s.id));
     if (missed.length > 0) {
@@ -144,7 +162,9 @@ Request: ${prompt}`;
   }
 });
 
-// POST /api/groups/send  { class_id, emails: [{student_id, subject, body}], smtp_pass? }
+// POST /api/groups/send
+// Body: { class_id, emails: [{student_id, subject, body, role}], smtp_pass?, role_attachments? }
+// role_attachments: [{ role, filename, content (base64), content_type }]
 router.post('/send', async (req, res, next) => {
   try {
     const smtpPass =
@@ -154,8 +174,7 @@ router.post('/send', async (req, res, next) => {
 
     if (!transport || !from) {
       return res.status(503).json({
-        error:
-          'Email is not configured. Set SMTP_HOST and EMAIL_FROM in backend/.env',
+        error: 'Email is not configured. Set SMTP_HOST and EMAIL_FROM in backend/.env',
       });
     }
 
@@ -172,6 +191,26 @@ router.post('/send', async (req, res, next) => {
     const cls = db.prepare('SELECT id FROM classes WHERE id=?').get(classId);
     if (!cls) return res.status(404).json({ error: 'Class not found' });
 
+    // Build role → nodemailer attachment map (case-insensitive key)
+    const rawAttachments = Array.isArray(req.body.role_attachments)
+      ? req.body.role_attachments
+      : [];
+    const attachmentByRole = new Map();
+    for (const att of rawAttachments) {
+      if (
+        att &&
+        typeof att.role === 'string' &&
+        typeof att.filename === 'string' &&
+        typeof att.content === 'string'
+      ) {
+        attachmentByRole.set(att.role.toLowerCase().trim(), {
+          filename: att.filename,
+          content: Buffer.from(att.content, 'base64'),
+          contentType: att.content_type || 'application/octet-stream',
+        });
+      }
+    }
+
     const getStudent = db.prepare(
       'SELECT id, name, email FROM students WHERE id=? AND class_id=?',
     );
@@ -182,6 +221,7 @@ router.post('/send', async (req, res, next) => {
       const studentId = Number(item.student_id);
       const subject = String(item.subject || '').trim();
       const body = String(item.body || '');
+      const role = String(item.role || '').toLowerCase().trim();
 
       if (!Number.isInteger(studentId) || studentId < 1 || !subject) {
         failed.push({ student_id: studentId, error: 'invalid item' });
@@ -200,15 +240,22 @@ router.post('/send', async (req, res, next) => {
         continue;
       }
 
+      const attachment = attachmentByRole.get(role);
+
       try {
-        await transport.sendMail({ from, to: addr, subject, text: body });
+        await transport.sendMail({
+          from,
+          to: addr,
+          subject,
+          text: body,
+          attachments: attachment ? [attachment] : undefined,
+        });
         sent.push(studentId);
       } catch (err) {
         failed.push({ student_id: studentId, error: err.message || 'send failed' });
       }
     }
 
-    // Log the batch
     if (sent.length > 0) {
       const sentStudents = sent.map((sid) => {
         const row = db
