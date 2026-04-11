@@ -64,9 +64,10 @@ router.get('/summary', (req, res) => {
       s.id                        AS student_id,
       s.name,
       s.sortable_name,
-      COALESCE(SUM(p.interruptions), 0)                            AS total_interruptions,
-      ROUND(AVG(CASE WHEN p.contribution_rating IS NOT NULL
-                     THEN p.contribution_rating END), 2)           AS avg_contribution
+      COALESCE(SUM(p.interruptions), 0)  AS total_interruptions,
+      CASE WHEN COUNT(ses.id) = 0 THEN NULL
+           ELSE ROUND(CAST(SUM(COALESCE(p.contribution_rating, 0)) AS REAL) / COUNT(ses.id), 2)
+      END                                AS avg_contribution
     FROM students s
     LEFT JOIN sessions ses ON ses.class_id = s.class_id
       AND (ses.date IS NULL OR date(ses.date) IS NULL OR date(ses.date) <= ?)
