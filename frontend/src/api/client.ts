@@ -3,6 +3,12 @@
 export interface Settings {
   canvas_base_url?: string;
   canvas_token?: string;
+  smtp_host?: string;
+  smtp_port?: string;
+  smtp_secure?: string;
+  smtp_user?: string;
+  smtp_pass?: string;
+  email_from?: string;
 }
 
 export interface CanvasCourse {
