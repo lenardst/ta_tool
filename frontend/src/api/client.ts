@@ -41,6 +41,7 @@ export interface Student {
   name: string;
   email: string;
   sortable_name: string;
+  deleted_at: string | null;
 }
 
 export interface Session {
