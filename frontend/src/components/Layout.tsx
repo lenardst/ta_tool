@@ -14,7 +14,6 @@ import {
   Cog6ToothIcon,
   ShieldCheckIcon,
   TableCellsIcon,
-  UserGroupIcon,
   EnvelopeIcon,
 } from '@heroicons/react/24/outline';
 
@@ -28,7 +27,7 @@ const navItems = [
 
 export default function Layout() {
   const { activeClass, setActiveClass } = useActiveClass();
-  const { username, logout, is_admin } = useAuth();
+  const { username, logout } = useAuth();
   const navigate = useNavigate();
   const { data: classes = [] } = useQuery({ queryKey: ['classes'], queryFn: api.classes.list });
   const todayStr = localISODate();
