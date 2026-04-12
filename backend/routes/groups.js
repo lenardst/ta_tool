@@ -52,9 +52,9 @@ function formatNameList(names) {
 // ─── System prompt ────────────────────────────────────────────────────────────
 // Compact keys (sid/g/r) keep the output token count minimal.
 
-const SYSTEM_PROMPT = `Given a student count and a grouping request, return the group structure.
-Return JSON: {"interp":"<brief summary>","slots":[{"g":<group>,"r":"<role>"}]}
-Produce exactly N slots (one per student). g=0 for observers.`;
+const SYSTEM_PROMPT = `Given a student count and a grouping request, return the group pattern.
+Return JSON: {"interp":"<brief summary>","group_roles":["RoleA","RoleB",...],"remainder_role":"<role for leftover students, or Observer>"}
+group_roles is the ordered list of roles for ONE group. The backend repeats it to fill all students.`;
 
 const DEFAULT_SUBJECT = 'Group assignment';
 const DEFAULT_BODY =
@@ -139,10 +139,24 @@ router.post('/generate', async (req, res, next) => {
 
     const result = JSON.parse(jsonMatch[0]);
 
-    const slots = Array.isArray(result.slots) ? result.slots : [];
-    if (slots.length === 0) {
-      throw new Error('LLM response missing slots array');
+    const groupRoles = Array.isArray(result.group_roles) ? result.group_roles.map(String) : [];
+    if (groupRoles.length === 0) {
+      throw new Error('LLM response missing group_roles array');
     }
+    const remainderRole = String(result.remainder_role || 'Observer');
+
+    // Build the exact slot list mathematically — backend owns the arithmetic
+    const groupSize = groupRoles.length;
+    const nFull = Math.floor(students.length / groupSize);
+    const nRemainder = students.length % groupSize;
+    const slots = [];
+    for (let g = 1; g <= nFull; g++) {
+      for (const role of groupRoles) slots.push({ g, r: role });
+    }
+    for (let i = 0; i < nRemainder; i++) {
+      slots.push({ g: 0, r: remainderRole });
+    }
+    // slots.length === students.length guaranteed
 
     // Shuffle students (Fisher-Yates) and zip with slots
     const shuffled = [...students];
@@ -151,11 +165,10 @@ router.post('/generate', async (req, res, next) => {
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
-    // Pair each slot with the corresponding shuffled student (trim extras if LLM over/under-counts)
-    const pairs = slots.slice(0, shuffled.length).map((slot, i) => ({
+    const pairs = slots.map((slot, i) => ({
       student: shuffled[i],
-      groupNum: Number(slot.g) || 0,
-      roleName: String(slot.r || ''),
+      groupNum: slot.g,
+      roleName: slot.r,
     }));
 
     // Build group → member names map for {{group_members}}
@@ -186,11 +199,7 @@ router.post('/generate', async (req, res, next) => {
       };
     });
 
-    // Any students beyond the slot count are missed (LLM gave too few slots)
-    const missed = shuffled.slice(slots.length);
-    if (missed.length > 0) {
-      console.warn(`Groups generate: ${missed.length} student(s) unassigned (LLM returned ${slots.length} slots for ${students.length} students)`);
-    }
+    const missed = []; // impossible with this approach — all students always assigned
 
     res.json({
       interpretation: String(result.interp || ''),
