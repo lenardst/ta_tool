@@ -127,6 +127,8 @@ async function chatCompletion(messages, options = {}) {
       model: options.model || 'gpt-4o',
       stream: false,
       temperature: options.temperature ?? 0.7,
+      max_tokens: options.max_tokens ?? 4096,
+      ...(options.response_format ? { response_format: options.response_format } : {}),
       messages: cleaned,
     }),
   });

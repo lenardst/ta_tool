@@ -50,29 +50,11 @@ function formatNameList(names) {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
-// The LLM only needs to produce group assignments — no email content.
-// Email content is generated server-side from a single shared template.
+// Compact keys (sid/g/r) keep the output token count minimal.
 
-const SYSTEM_PROMPT = `You are a teaching assistant tool for group management.
-
-Given a class roster and a natural-language grouping request you will:
-1. Parse the request to understand group size, roles, and how to handle remainders
-   (e.g. observers, uneven groups).
-2. RANDOMLY assign students to groups and roles — shuffle the list, do not go
-   alphabetically.
-
-Return ONLY a valid JSON object (no markdown fences, no explanation):
-{
-  "interpretation": "Short summary, e.g. '9 triads + 2 observers. Roles: Michael, Phuc, Georg.'",
-  "assignments": [
-    { "student_id": 123, "group_number": 1, "role": "Michael" }
-  ]
-}
-
-Rules:
-- Every student must appear in assignments EXACTLY ONCE.
-- group_number must be a positive integer; observers use 0.
-- Do NOT include meta-commentary or markdown inside JSON string values.`;
+const SYSTEM_PROMPT = `Randomly assign students to groups per the request (do not go alphabetically).
+Return JSON: {"interp":"e.g. 9 triads + 2 observers","assignments":[{"sid":1,"g":1,"r":"Role"}]}
+Rules: every student exactly once; g=0 for observers; use only the integer IDs given.`;
 
 const DEFAULT_SUBJECT = 'Group assignment';
 const DEFAULT_BODY =
@@ -133,19 +115,21 @@ router.post('/generate', async (req, res, next) => {
       roleSection = `\nRole descriptions:\n${lines.join('\n')}\n`;
     }
 
-    const studentList = students.map((s) => `${s.id}: ${s.name}`).join('\n');
+    // Compact student list: "id:Name" (no spaces) saves tokens vs "id: Name"
+    const studentList = students.map((s) => `${s.id}:${s.name}`).join('\n');
 
-    const userMessage = `Class: ${cls.name}
-Students (${students.length} total):
-${studentList}${roleSection}
-Request: ${prompt}`;
+    const userMessage = `Students:\n${studentList}${roleSection}\nRequest: ${prompt}`;
 
     const rawResponse = await chatCompletion(
       [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userMessage },
       ],
-      { temperature: 0.9 },
+      {
+        temperature: 0.9,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' },
+      },
     );
 
     // Extract JSON from LLM response (handles occasional markdown fences)
@@ -168,9 +152,10 @@ Request: ${prompt}`;
     // Build group → member names map (for {{group_members}} substitution)
     const groupMembersMap = new Map(); // groupNumber -> string[]
     for (const a of result.assignments) {
-      const groupNum = Number(a.group_number) || 0;
+      // Accept both compact (g) and verbose (group_number) keys for robustness
+      const groupNum = Number(a.g ?? a.group_number) || 0;
       if (groupNum === 0) continue; // observers have no group peers
-      const s = studentMap.get(Number(a.student_id));
+      const s = studentMap.get(Number(a.sid ?? a.student_id));
       if (!s) continue;
       const list = groupMembersMap.get(groupNum) || [];
       list.push(s.name);
@@ -179,11 +164,11 @@ Request: ${prompt}`;
 
     // Personalise each assignment using the single shared template
     const enriched = result.assignments
-      .filter((a) => studentMap.has(Number(a.student_id)))
+      .filter((a) => studentMap.has(Number(a.sid ?? a.student_id)))
       .map((a) => {
-        const s = studentMap.get(Number(a.student_id));
-        const groupNum = Number(a.group_number) || 0;
-        const roleName = String(a.role || '');
+        const s = studentMap.get(Number(a.sid ?? a.student_id));
+        const groupNum = Number(a.g ?? a.group_number) || 0;
+        const roleName = String(a.r ?? a.role ?? '');
 
         // group_members = all other names in the same group
         const allGroupNames = groupMembersMap.get(groupNum) || [];
@@ -214,7 +199,7 @@ Request: ${prompt}`;
     }
 
     res.json({
-      interpretation: String(result.interpretation || ''),
+      interpretation: String(result.interp ?? result.interpretation ?? ''),
       assignments: enriched,
       missed_students: missed.map((s) => ({ id: s.id, name: s.name })),
     });

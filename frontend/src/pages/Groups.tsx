@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { jsPDF } from 'jspdf';
 import { api } from '../api/client';
 import type { GroupAssignment } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
@@ -7,6 +8,7 @@ import {
   SparklesIcon,
   PaperAirplaneIcon,
   ArrowPathIcon,
+  ArrowDownTrayIcon,
   Squares2X2Icon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -466,6 +468,56 @@ export default function Groups() {
   const smtpOk = emailStatus?.smtp_configured === true;
   const canSend = smtpOk && selected.size > 0 && smtpPass.trim() && assignments.length > 0 && !sendMutation.isPending;
 
+  function exportToPDF() {
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    let y = 18;
+
+    // Title
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Group Assignment', 14, y);
+    y += 8;
+
+    // Subtitle: class + date
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    const subtitle = [activeClass!.name, exerciseDate].filter(Boolean).join('  ·  ');
+    doc.text(subtitle, 14, y);
+    y += 10;
+
+    // Horizontal rule
+    doc.setDrawColor(180);
+    doc.line(14, y, pageW - 14, y);
+    y += 7;
+
+    // Groups
+    for (const [groupNum, members] of groupMap) {
+      const title = groupNum === 0 ? 'Observers' : `Group ${groupNum}`;
+
+      // Section heading
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      // Page break if needed
+      if (y > 270) { doc.addPage(); y = 18; }
+      doc.text(title, 14, y);
+      y += 6;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      for (const m of members) {
+        if (y > 278) { doc.addPage(); y = 18; }
+        const line = m.role ? `${m.student_name}  —  ${m.role}` : m.student_name;
+        doc.text(line, 20, y);
+        y += 5.5;
+      }
+      y += 3;
+    }
+
+    const datePart = exerciseDate ? `-${exerciseDate.replace(/[^a-z0-9]/gi, '_')}` : '';
+    doc.save(`groups${datePart}.pdf`);
+  }
+
   if (!activeClass) return <NoClass />;
 
   return (
@@ -687,7 +739,17 @@ export default function Groups() {
 
           {/* Group grid */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
-            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Groups</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Groups</h2>
+              <button
+                type="button"
+                onClick={exportToPDF}
+                className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
+              >
+                <ArrowDownTrayIcon className="h-3.5 w-3.5" />
+                Export PDF
+              </button>
+            </div>
             <div className="flex gap-3 overflow-x-auto pb-2">
               {[...groupMap.entries()].map(([groupNum, members]) => (
                 <GroupCard key={groupNum} groupNumber={groupNum} members={members} roleIndex={roleIndex} />
