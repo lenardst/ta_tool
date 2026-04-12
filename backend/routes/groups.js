@@ -52,9 +52,9 @@ function formatNameList(names) {
 // ─── System prompt ────────────────────────────────────────────────────────────
 // Compact keys (sid/g/r) keep the output token count minimal.
 
-const SYSTEM_PROMPT = `Randomly assign students to groups per the request (do not go alphabetically).
-Return JSON: {"interp":"e.g. 9 triads + 2 observers","assignments":[{"sid":1,"g":1,"r":"Role"}]}
-Rules: every student exactly once; g=0 for observers; use only the integer IDs given.`;
+const SYSTEM_PROMPT = `Given a student count and a grouping request, return the group structure.
+Return JSON: {"interp":"<brief summary>","slots":[{"g":<group>,"r":"<role>"}]}
+Produce exactly N slots (one per student). g=0 for observers.`;
 
 const DEFAULT_SUBJECT = 'Group assignment';
 const DEFAULT_BODY =
@@ -115,10 +115,7 @@ router.post('/generate', async (req, res, next) => {
       roleSection = `\nRole descriptions:\n${lines.join('\n')}\n`;
     }
 
-    // Compact student list: "id:Name" (no spaces) saves tokens vs "id: Name"
-    const studentList = students.map((s) => `${s.id}:${s.name}`).join('\n');
-
-    const userMessage = `Students:\n${studentList}${roleSection}\nRequest: ${prompt}`;
+    const userMessage = `Students: ${students.length}${roleSection}\nRequest: ${prompt}`;
 
     const rawResponse = await chatCompletion(
       [
@@ -142,64 +139,61 @@ router.post('/generate', async (req, res, next) => {
 
     const result = JSON.parse(jsonMatch[0]);
 
-    if (!Array.isArray(result.assignments)) {
-      throw new Error('LLM response missing assignments array');
+    const slots = Array.isArray(result.slots) ? result.slots : [];
+    if (slots.length === 0) {
+      throw new Error('LLM response missing slots array');
     }
 
-    // Build student lookup map
-    const studentMap = new Map(students.map((s) => [s.id, s]));
+    // Shuffle students (Fisher-Yates) and zip with slots
+    const shuffled = [...students];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
 
-    // Build group → member names map (for {{group_members}} substitution)
-    const groupMembersMap = new Map(); // groupNumber -> string[]
-    for (const a of result.assignments) {
-      // Accept both compact (g) and verbose (group_number) keys for robustness
-      const groupNum = Number(a.g ?? a.group_number) || 0;
-      if (groupNum === 0) continue; // observers have no group peers
-      const s = studentMap.get(Number(a.sid ?? a.student_id));
-      if (!s) continue;
+    // Pair each slot with the corresponding shuffled student (trim extras if LLM over/under-counts)
+    const pairs = slots.slice(0, shuffled.length).map((slot, i) => ({
+      student: shuffled[i],
+      groupNum: Number(slot.g) || 0,
+      roleName: String(slot.r || ''),
+    }));
+
+    // Build group → member names map for {{group_members}}
+    const groupMembersMap = new Map();
+    for (const { student, groupNum } of pairs) {
+      if (groupNum === 0) continue;
       const list = groupMembersMap.get(groupNum) || [];
-      list.push(s.name);
+      list.push(student.name);
       groupMembersMap.set(groupNum, list);
     }
 
     // Personalise each assignment using the single shared template
-    const enriched = result.assignments
-      .filter((a) => studentMap.has(Number(a.sid ?? a.student_id)))
-      .map((a) => {
-        const s = studentMap.get(Number(a.sid ?? a.student_id));
-        const groupNum = Number(a.g ?? a.group_number) || 0;
-        const roleName = String(a.r ?? a.role ?? '');
+    const enriched = pairs.map(({ student: s, groupNum, roleName }) => {
+      const allGroupNames = groupMembersMap.get(groupNum) || [];
+      const otherNames = allGroupNames.filter((name) => name !== s.name);
+      const groupMembersStr = formatNameList(otherNames);
+      const extra = { date, role: roleName, groupMembers: groupMembersStr };
+      return {
+        student_id: s.id,
+        student_name: s.name,
+        student_sortable_name: s.sortable_name || '',
+        student_email: s.email || '',
+        group_number: groupNum,
+        role: roleName,
+        group_members: groupMembersStr,
+        email_subject: personalize(subjectTpl, s, groupNum, extra),
+        email_body: personalize(bodyTpl, s, groupNum, extra),
+      };
+    });
 
-        // group_members = all other names in the same group
-        const allGroupNames = groupMembersMap.get(groupNum) || [];
-        const otherNames = allGroupNames.filter((name) => name !== s.name);
-        const groupMembersStr = formatNameList(otherNames);
-
-        const extra = { date, role: roleName, groupMembers: groupMembersStr };
-
-        return {
-          student_id: Number(a.student_id),
-          student_name: s.name,
-          student_sortable_name: s.sortable_name || '',
-          student_email: s.email || '',
-          group_number: groupNum,
-          role: roleName,
-          group_members: groupMembersStr,
-          email_subject: personalize(subjectTpl, s, groupNum, extra),
-          email_body: personalize(bodyTpl, s, groupNum, extra),
-        };
-      });
-
-    const assignedIds = new Set(enriched.map((a) => a.student_id));
-    const missed = students.filter((s) => !assignedIds.has(s.id));
+    // Any students beyond the slot count are missed (LLM gave too few slots)
+    const missed = shuffled.slice(slots.length);
     if (missed.length > 0) {
-      console.warn(
-        `Groups generate: LLM missed ${missed.length} student(s): ${missed.map((s) => s.name).join(', ')}`,
-      );
+      console.warn(`Groups generate: ${missed.length} student(s) unassigned (LLM returned ${slots.length} slots for ${students.length} students)`);
     }
 
     res.json({
-      interpretation: String(result.interp ?? result.interpretation ?? ''),
+      interpretation: String(result.interp || ''),
       assignments: enriched,
       missed_students: missed.map((s) => ({ id: s.id, name: s.name })),
     });
