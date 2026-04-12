@@ -145,7 +145,11 @@ Request: ${prompt}`;
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userMessage },
       ],
-      { temperature: 0.9 },
+      {
+        temperature: 0.9,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' },
+      },
     );
 
     // Extract JSON from LLM response (handles occasional markdown fences)
