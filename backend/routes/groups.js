@@ -52,9 +52,9 @@ function formatNameList(names) {
 // ─── System prompt ────────────────────────────────────────────────────────────
 // Compact keys (sid/g/r) keep the output token count minimal.
 
-const SYSTEM_PROMPT = `Randomly assign students to groups per the request (do not go alphabetically).
-Return JSON: {"interp":"e.g. 9 triads + 2 observers","assignments":[{"sid":1,"g":1,"r":"Role"}]}
-Rules: every student exactly once; g=0 for observers; use only the integer IDs given.`;
+const SYSTEM_PROMPT = `Assign students to groups per the request.
+Return JSON: {"interp":"<brief summary>","assignments":[{"sid":<id>,"g":<group>,"r":"<role>"}]}
+IMPORTANT: every student ID in the list must appear in assignments exactly once. g=0 for observers.`;
 
 const DEFAULT_SUBJECT = 'Group assignment';
 const DEFAULT_BODY =
@@ -115,10 +115,17 @@ router.post('/generate', async (req, res, next) => {
       roleSection = `\nRole descriptions:\n${lines.join('\n')}\n`;
     }
 
-    // Compact student list: "id:Name" (no spaces) saves tokens vs "id: Name"
-    const studentList = students.map((s) => `${s.id}:${s.name}`).join('\n');
+    // Shuffle server-side (Fisher-Yates) so the LLM sees a random order
+    // and naturally produces random group assignments.
+    const shuffled = [...students];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
 
-    const userMessage = `Students:\n${studentList}${roleSection}\nRequest: ${prompt}`;
+    const studentList = shuffled.map((s) => `${s.id}:${s.name}`).join('\n');
+
+    const userMessage = `Students (assign ALL ${students.length}):\n${studentList}${roleSection}\nRequest: ${prompt}`;
 
     const rawResponse = await chatCompletion(
       [
