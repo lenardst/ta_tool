@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { CanvasCourse, CanvasSection, Class } from '../api/client';
 import { useActiveClass } from '../context/ClassContext';
+import { SessionsContent } from './SessionsSetup';
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
@@ -161,6 +162,36 @@ export default function Settings() {
   const [token, setToken] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
 
+  // Email settings state
+  const [smtpHost, setSmtpHost] = useState('');
+  const [smtpPort, setSmtpPort] = useState('');
+  const [smtpSecure, setSmtpSecure] = useState('');
+  const [smtpUser, setSmtpUser] = useState('');
+  const [smtpPass, setSmtpPass] = useState('');
+  const [emailFrom, setEmailFrom] = useState('');
+  const [emailSavedMsg, setEmailSavedMsg] = useState('');
+
+  const saveEmailSettingsMutation = useMutation({
+    mutationFn: async () => {
+      const updates: [string, string][] = [
+        ['smtp_host', smtpHost.trim()],
+        ['smtp_port', smtpPort.trim()],
+        ['smtp_secure', smtpSecure],
+        ['smtp_user', smtpUser.trim()],
+        ['smtp_pass', smtpPass],
+        ['email_from', emailFrom.trim()],
+      ];
+      for (const [key, value] of updates) {
+        if (value !== '') await api.settings.set(key, value);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      setEmailSavedMsg('Saved!');
+      setTimeout(() => setEmailSavedMsg(''), 2000);
+    },
+  });
+
   const saveSettingsMutation = useMutation({
     mutationFn: async () => {
       if (baseUrl.trim()) await api.settings.set('canvas_base_url', baseUrl.trim());
@@ -257,7 +288,7 @@ export default function Settings() {
   });
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
 
       {/* Canvas credentials */}
@@ -348,6 +379,103 @@ export default function Settings() {
               </ul>
             </>
           )}
+        </div>
+      </SectionCard>
+
+      {/* Sessions setup */}
+      <SessionsContent />
+
+      {/* Email / SMTP settings */}
+      <SectionCard title="Email Settings">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">
+            Configure your outgoing mail server. These credentials are stored in your profile and used when sending emails to students.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
+              <input
+                type="text"
+                placeholder={settings?.smtp_host || 'smtp.example.com'}
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
+              <input
+                type="number"
+                placeholder={settings?.smtp_port || '587'}
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="smtp-secure"
+              type="checkbox"
+              checked={smtpSecure === '1' || (smtpSecure === '' && settings?.smtp_secure === '1')}
+              onChange={(e) => setSmtpSecure(e.target.checked ? '1' : '0')}
+              className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <label htmlFor="smtp-secure" className="text-sm font-medium text-gray-700">
+              Use TLS/SSL
+              <span className="ml-1 text-xs text-gray-400">(enable for port 465)</span>
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
+            <input
+              type="text"
+              placeholder={settings?.smtp_user || 'you@example.com'}
+              value={smtpUser}
+              onChange={(e) => setSmtpUser(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
+            <input
+              type="password"
+              placeholder={settings?.smtp_pass ? '••••••••••••' : 'SMTP password or app password'}
+              value={smtpPass}
+              onChange={(e) => setSmtpPass(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">From Address</label>
+            <input
+              type="email"
+              placeholder={settings?.email_from || 'you@example.com'}
+              value={emailFrom}
+              onChange={(e) => setEmailFrom(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              The sender address that appears in the student's inbox.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => saveEmailSettingsMutation.mutate()}
+              disabled={saveEmailSettingsMutation.isPending}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Save
+            </button>
+            {emailSavedMsg && (
+              <span className="flex items-center gap-1 text-sm text-green-600">
+                <CheckCircleIcon className="h-4 w-4" /> {emailSavedMsg}
+              </span>
+            )}
+            {settings?.smtp_host && (
+              <span className="text-xs text-gray-400">Connected to: {settings.smtp_host}</span>
+            )}
+          </div>
         </div>
       </SectionCard>
 

@@ -3,6 +3,12 @@
 export interface Settings {
   canvas_base_url?: string;
   canvas_token?: string;
+  smtp_host?: string;
+  smtp_port?: string;
+  smtp_secure?: string;
+  smtp_user?: string;
+  smtp_pass?: string;
+  email_from?: string;
 }
 
 export interface CanvasCourse {
@@ -41,6 +47,7 @@ export interface Student {
   name: string;
   email: string;
   sortable_name: string;
+  deleted_at: string | null;
 }
 
 export interface Session {
@@ -102,6 +109,29 @@ export interface GradeRecord {
   assignment_id: number;
   student_id: number;
   points: number | null;
+}
+
+export interface GroupAssignment {
+  student_id: number;
+  student_name: string;
+  student_sortable_name: string;
+  student_email: string;
+  group_number: number;
+  role: string;
+  group_members: string;
+  email_subject: string;
+  email_body: string;
+}
+
+export interface GroupResult {
+  interpretation: string;
+  assignments: GroupAssignment[];
+  missed_students: { id: number; name: string }[];
+}
+
+export interface GroupSendResult {
+  sent: number[];
+  failed: { student_id: number; error: string }[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -300,6 +330,45 @@ export const api = {
       apiFetch<{ message: string }>('/api/llm/chat', {
         method: 'POST',
         body: JSON.stringify({ messages }),
+      }),
+  },
+
+  // ─── Groups ───────────────────────────────────────────────────────────────
+
+  groups: {
+    generate: (
+      classId: number,
+      prompt: string,
+      opts?: {
+        date?: string;
+        emailTemplate?: { subject: string; body: string };
+        roleDescriptions?: { name: string; description: string; has_attachment?: boolean }[];
+      },
+    ) =>
+      apiFetch<GroupResult>('/api/groups/generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          class_id: classId,
+          prompt,
+          date: opts?.date,
+          email_template: opts?.emailTemplate,
+          role_descriptions: opts?.roleDescriptions,
+        }),
+      }),
+    send: (
+      classId: number,
+      emails: { student_id: number; subject: string; body: string; role: string }[],
+      smtpPass?: string,
+      roleAttachments?: { role: string; filename: string; content: string; content_type: string }[],
+    ) =>
+      apiFetch<GroupSendResult>('/api/groups/send', {
+        method: 'POST',
+        body: JSON.stringify({
+          class_id: classId,
+          emails,
+          smtp_pass: smtpPass,
+          role_attachments: roleAttachments,
+        }),
       }),
   },
 

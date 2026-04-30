@@ -4,21 +4,28 @@ const db = require('../db');
 
 const router = express.Router();
 
-function getTransport(smtpPass) {
-  const host = process.env.SMTP_HOST;
+function getUserEmailSettings(userId) {
+  const rows = db.prepare(
+    "SELECT key, value FROM settings WHERE user_id=? AND key IN ('smtp_host','smtp_port','smtp_secure','smtp_user','smtp_pass','email_from')"
+  ).all(userId);
+  return Object.fromEntries(rows.map(r => [r.key, r.value]));
+}
+
+function getTransport(emailSettings) {
+  const host = emailSettings.smtp_host;
   if (!host) return null;
-  const port = Number(process.env.SMTP_PORT || 587);
+  const port = Number(emailSettings.smtp_port || 587);
   const secure =
-    process.env.SMTP_SECURE === '1' ||
-    process.env.SMTP_SECURE === 'true' ||
+    emailSettings.smtp_secure === '1' ||
+    emailSettings.smtp_secure === 'true' ||
     port === 465;
-  const pass = smtpPass || process.env.SMTP_PASS || '';
+  const pass = emailSettings.smtp_pass || '';
   return nodemailer.createTransport({
     host,
     port,
     secure,
-    auth: process.env.SMTP_USER
-      ? { user: process.env.SMTP_USER, pass }
+    auth: emailSettings.smtp_user
+      ? { user: emailSettings.smtp_user, pass }
       : undefined,
   });
 }
@@ -34,22 +41,23 @@ function personalize(template, { name, sortable_name }) {
 }
 
 // GET /api/email/status
-router.get('/status', (_req, res) => {
+router.get('/status', (req, res) => {
+  const s = getUserEmailSettings(req.user.id);
   res.json({
-    smtp_configured: Boolean(process.env.SMTP_HOST && process.env.EMAIL_FROM),
+    smtp_configured: Boolean(s.smtp_host && s.email_from),
   });
 });
 
 // POST /api/email/send  { class_id, student_ids, subject, body }
 router.post('/send', async (req, res, next) => {
   try {
-    const smtpPass = typeof req.body.smtp_pass === 'string' ? req.body.smtp_pass : undefined;
-    const transport = getTransport(smtpPass);
-    const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
+    const emailSettings = getUserEmailSettings(req.user.id);
+    const transport = getTransport(emailSettings);
+    const from = emailSettings.email_from || emailSettings.smtp_user;
     if (!transport || !from) {
       return res.status(503).json({
         error:
-          'Email is not configured. Set SMTP_HOST, EMAIL_FROM, and usually SMTP_PORT / SMTP_USER / SMTP_PASS in backend/.env',
+          'Email is not configured. Please set your SMTP settings in Profile Settings.',
       });
     }
 
