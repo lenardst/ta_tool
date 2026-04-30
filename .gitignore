@@ -30,3 +30,6 @@ coverage/
 .cache/
 tmp/
 temp/
+
+# Local SQLite (created on first backend run)
+backend/ta_tool.db
